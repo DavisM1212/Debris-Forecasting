@@ -14,15 +14,58 @@ from dashboard_helpers import (
 # STREAMLIT CONFIG
 # ----------------------------------
 st.set_page_config(
-    page_title="Orbital Debris Projection",
+    page_title="Orbital Debris Risk Outlook",
     layout="wide"
 )
 
-st.title("Orbital Debris Monte Carlo Projections (<10 cm)")
+st.title("Orbital Debris Risk Outlook (<10 cm)")
 st.write("""
-Interactive Monte Carlo forecasts of large orbital debris and catastrophic collisions
-under different mitigation scenarios, based on SATCAT history.
+Scenario-based Monte Carlo forecasts of large orbital debris and catastrophic collisions,
+grounded in SATCAT history and aligned with NASA ODPO / ESA space environment practices to
+show how mitigation shifts the future risk curve.
 """)
+st.caption(
+    "NASA Orbital Debris Quarterly News (ODQN 29-3) and ESA Space Environment Report 9.1 inform explosion rates, "
+    "mitigation compliance, and long-term outlook assumptions."
+)
+st.markdown("---")
+
+# ----------------------------------
+# SCENARIOS / ORIGINAL CONSTANTS
+# ----------------------------------
+SCENARIOS = {
+    "NoMit_Exp0.0045": {"pmd_comp": 0.20, "P8": 0.0045},
+    "PMD25_Exp0.0045": {"pmd_comp": 0.90, "P8": 0.0045},
+    "NoMit_Exp0.0010": {"pmd_comp": 0.20, "P8": 0.0010},
+    "PMD25_Exp0.0010": {"pmd_comp": 0.90, "P8": 0.0010},
+}
+
+SCENARIO_META = {
+    "NoMit_Exp0.0045": {
+        "label": "Status quo | 0.45% expl",
+        "color": "#A50021",
+        "pair_key": "Exp0.0045",
+        "mitigated": False,
+    },
+    "PMD25_Exp0.0045": {
+        "label": "PMD 90% | 0.45% expl",
+        "color": "#2E8B57",
+        "pair_key": "Exp0.0045",
+        "mitigated": True,
+    },
+    "NoMit_Exp0.0010": {
+        "label": "Status quo | 0.10% expl",
+        "color": "#FF7043",
+        "pair_key": "Exp0.0010",
+        "mitigated": False,
+    },
+    "PMD25_Exp0.0010": {
+        "label": "PMD 90% | 0.10% expl",
+        "color": "#4682B4",
+        "pair_key": "Exp0.0010",
+        "mitigated": True,
+    },
+}
 
 # ----------------------------------
 # USER INPUTS (SIDEBAR)
@@ -37,7 +80,7 @@ N_YEARS_FWD = 200
 N_PATHS = 300
 
 selected_scenarios = st.sidebar.multiselect(
-    "Scenarios to plot",
+    "Scenarios to show",
     options=[
         "NoMit_Exp0.0045",
         "PMD25_Exp0.0045",
@@ -49,16 +92,21 @@ selected_scenarios = st.sidebar.multiselect(
         "PMD25_Exp0.0045",
         "NoMit_Exp0.0010",
         "PMD25_Exp0.0010",
-    ]
+    ],
+    format_func=lambda x: SCENARIO_META[x]["label"],
+)
+st.sidebar.expander("What do these scenarios mean?", expanded=False).write(
+    "Explosion rates follow NASA measurements (~0.45% historic vs 0.10% mitigated). "
+    "Mitigation cases assume PMD (post-mission disposal) at 90% per ESA practice."
 )
 
 st.sidebar.header("Financial Assumptions")
 COLLISION_COST_MUSD = st.sidebar.slider(
-    "Cost per catastrophic collision (USD millions)",
+    "Loss per catastrophic collision (USD millions)",
     min_value=50, max_value=1000, value=250, step=25
 )
 AVOIDANCE_COST_MUSD = st.sidebar.slider(
-    "Avoidance/mitigation spend per collision avoided (USD millions)",
+    "Avoidance/mitigation spend per collision averted (USD millions)",
     min_value=1, max_value=100, value=10, step=1
 )
 
@@ -70,41 +118,6 @@ FRAG_EXPLOSION = {"SC": 120, "RB": 260, "SOZ": 160}
 FRAG_COLLISION = 500
 W_SOZ = 1.0
 W_FRAG = 0.02
-
-SCENARIOS = {
-    "NoMit_Exp0.0045": {"pmd_comp": 0.20, "P8": 0.0045},
-    "PMD25_Exp0.0045": {"pmd_comp": 0.90, "P8": 0.0045},
-    "NoMit_Exp0.0010": {"pmd_comp": 0.20, "P8": 0.0010},
-    "PMD25_Exp0.0010": {"pmd_comp": 0.90, "P8": 0.0010},
-}
-
-SCENARIO_META = {
-    "NoMit_Exp0.0045": {
-        "label": "No Mitigation - 0.45% Expl Rate",
-        "color": "#A50021",
-        "pair_key": "Exp0.0045",
-        "mitigated": False,
-    },
-    "PMD25_Exp0.0045": {
-        "label": "PMD - 0.45% Expl Rate",
-        "color": "#2E8B57",
-        "pair_key": "Exp0.0045",
-        "mitigated": True,
-    },
-    "NoMit_Exp0.0010": {
-        "label": "No Mitigation - 0.10% Expl Rate",
-        "color": "#FF7043",
-        "pair_key": "Exp0.0010",
-        "mitigated": False,
-    },
-    "PMD25_Exp0.0010": {
-        "label": "PMD - 0.10% Expl Rate",
-        "color": "#4682B4",
-        "pair_key": "Exp0.0010",
-        "mitigated": True,
-    },
-}
-
 
 def find_pair_scenario(name: str) -> str | None:
     """Find the counterpart scenario with the same pair_key but opposite mitigation flag."""
@@ -345,13 +358,6 @@ BASELINE_YEAR, cohorts0, tail_mean, tail_cagr = load_and_prepare_satcat(
     DATA_PATH, satcat_filename, HIST_TAIL
 )
 
-st.markdown(
-    f"**Baseline year:** {BASELINE_YEAR}  "
-    f"(SC alive: {int(cohorts0['SC'].sum()):,}, "
-    f"RB alive: {int(cohorts0['RB'].sum()):,}, "
-    f"SOZ alive: {int(cohorts0['SOZ'].sum()):,})"
-)
-
 # ----------------------------------
 # MONTE CARLO PATHS (CACHED)
 # ----------------------------------
@@ -507,21 +513,35 @@ else:
             )
             fans[scn] = {"YEARS": YEARS, "N": Ns, "C": Cs}
 
+    best_scenario = "PMD25_Exp0.0010"
+    if best_scenario not in fans:
+        YEARS, Ns, Cs = run_fan_cached(
+            best_scenario, N_PATHS, N_YEARS_FWD, HIST_TAIL,
+            BASELINE_YEAR, cohorts0, tail_mean
+        )
+        best_pack = {"YEARS": YEARS, "N": Ns, "C": Cs}
+    else:
+        best_pack = fans[best_scenario]
+
     years = next(iter(fans.values()))["YEARS"]
     default_focus_year = int(min(years[0] + 50, years[-1]))
 
-    focus_scenario = st.selectbox(
-        "Scenario for KPI focus",
-        selected_scenarios,
-        format_func=lambda x: SCENARIO_META[x]["label"],
-    )
-    focus_year = st.slider(
-        "Insight year",
-        int(years[0]),
-        int(years[-1]),
-        default_focus_year,
-        step=1,
-    )
+    st.markdown("### Insight controls")
+    focus_cols = st.columns([2, 1])
+    with focus_cols[0]:
+        focus_scenario = st.selectbox(
+            "Scenario spotlight",
+            selected_scenarios,
+            format_func=lambda x: SCENARIO_META[x]["label"],
+        )
+    with focus_cols[1]:
+        focus_year = st.slider(
+            "Year in focus",
+            int(years[0]),
+            int(years[-1]),
+            default_focus_year,
+            step=1,
+        )
 
     focus_pack = fans[focus_scenario]
     obj_summary = summarize_paths_at_year(years, focus_pack["N"], focus_year)
@@ -530,6 +550,11 @@ else:
     base_obj_median = float(np.median(focus_pack["N"][:, 0]))
     elapsed_years = obj_summary["year"] - int(years[0])
     growth = growth_rate_annualized(base_obj_median, obj_summary["median"], elapsed_years)
+
+    best_obj_summary = summarize_paths_at_year(best_pack["YEARS"], best_pack["N"], focus_year)
+    best_coll_summary = summarize_paths_at_year(best_pack["YEARS"], best_pack["C"], focus_year)
+    best_base_obj = float(np.median(best_pack["N"][:, 0]))
+    best_growth = growth_rate_annualized(best_base_obj, best_obj_summary["median"], elapsed_years)
 
     pair_name = find_pair_scenario(focus_scenario)
     collisions_avoided = None
@@ -553,30 +578,31 @@ else:
         cost_avoided_musd = max(0.0, collisions_avoided) * COLLISION_COST_MUSD
         coll_pct_reduction = pct_delta(mitig_coll["median"], base_coll["median"])
 
+    st.markdown("### Impact snapshot")
     kpi_cols = st.columns(3)
     kpi_cols[0].metric(
-        f"{SCENARIO_META[focus_scenario]['label']} objects @ {obj_summary['year']}",
+        f"{SCENARIO_META[focus_scenario]['label']} | Objects in {obj_summary['year']}",
         f"{obj_summary['median']:,.0f}",
-        delta=f"P95: {obj_summary['p95']:,.0f}"
+        delta=f"Delta vs best-case: {obj_summary['median'] - best_obj_summary['median']:+,.0f}",
     )
     kpi_cols[1].metric(
-        f"Cumulative collisions @ {coll_summary['year']}",
+        f"Cumulative collisions by {coll_summary['year']}",
         f"{coll_summary['median']:.2f}",
-        delta=f"P95: {coll_summary['p95']:.2f}"
+        delta=f"Delta vs best-case: {coll_summary['median'] - best_coll_summary['median']:+.2f}",
     )
     kpi_cols[2].metric(
-        "Annualized growth rate",
+        "Average annual growth",
         f"{growth*100:.2f}%",
-        delta=f"Vs baseline: {obj_summary['median']-base_obj_median:,.0f} objects"
+        delta=f"Delta vs best-case: {(growth - best_growth)*100:+.2f}%",
     )
-
+    st.markdown("### Financial & risk framing")
+    st.markdown("### Financial & risk framing")
     fin_cols = st.columns(3)
     fin_cols[0].metric(
-        "Collision exposure (median)",
+        "Expected loss (median)",
         format_cost_musd(coll_summary["median"] * COLLISION_COST_MUSD),
-        delta=f"P95: {format_cost_musd(coll_summary['p95'] * COLLISION_COST_MUSD)}"
+        delta=f"Delta vs best-case: {format_cost_musd((coll_summary['median'] - best_coll_summary['median']) * COLLISION_COST_MUSD)}",
     )
-
     if collisions_avoided is not None:
         delta_parts = []
         if objects_delta is not None:
@@ -586,31 +612,33 @@ else:
         delta_text = " | ".join(delta_parts) if delta_parts else None
 
         fin_cols[1].metric(
-            "Collisions avoided vs paired scenario",
+            "Collisions avoided (vs paired)",
             f"{collisions_avoided:.2f}",
-            delta=delta_text
+            delta=delta_text or f"Best-case collisions: {best_coll_summary['median']:.2f}"
         )
         fin_cols[2].metric(
-            "Cost avoided",
+            "Loss avoided",
             format_cost_musd(cost_avoided_musd),
-            delta=f"Spend (@{format_cost_musd(AVOIDANCE_COST_MUSD)} ea): {format_cost_musd(max(0.0, collisions_avoided) * AVOIDANCE_COST_MUSD)}"
+            delta=f"Best-case loss: {format_cost_musd(best_coll_summary['median'] * COLLISION_COST_MUSD)}"
         )
     else:
-        fin_cols[1].metric("Collisions avoided vs paired scenario", "N/A", delta="Pair not selected")
-        fin_cols[2].metric("Cost avoided", "N/A", delta=None)
+        fin_cols[1].metric("Collisions avoided (vs paired)", "N/A", delta="Pair not selected")
+        fin_cols[2].metric("Loss avoided", "N/A", delta=f"Best-case loss: {format_cost_musd(best_coll_summary['median'] * COLLISION_COST_MUSD)}")
 
-    st.markdown("---")
+    st.markdown("### Projections")
 
     obj_fig = go.Figure()
     for name, pack in fans.items():
         add_fan_traces(obj_fig, pack["YEARS"], pack["N"], SCENARIO_META[name])
     obj_fig.update_layout(
-        title="Projected Effective Number of Objects (<10 cm)",
+        title="Projected Large-Object Population (<10 cm)",
         xaxis_title="Year",
-        yaxis_title="Objects (<10 cm)",
+        yaxis_title="Objects (<10 cm, effective count)",
         hovermode="x unified",
         template="simple_white",
         legend_title="Scenarios",
+        height=750,
+        yaxis=dict(range=[36000, None]),
     )
     st.plotly_chart(obj_fig, use_container_width=True, config={"displayModeBar": False})
 
@@ -618,11 +646,12 @@ else:
     for name, pack in fans.items():
         add_fan_traces(coll_fig, pack["YEARS"], pack["C"], SCENARIO_META[name])
     coll_fig.update_layout(
-        title="Projected Cumulative Catastrophic Collisions",
+        title="Projected Catastrophic Collisions (cumulative)",
         xaxis_title="Year",
         yaxis_title="Cumulative catastrophic collisions",
         hovermode="x unified",
         template="simple_white",
         legend_title="Scenarios",
+        height=750,
     )
     st.plotly_chart(coll_fig, use_container_width=True, config={"displayModeBar": False})
