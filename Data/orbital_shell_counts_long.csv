@@ -1,0 +1,19 @@
+Band,Object_Type,Count
+LEO 0-400 km,Satellites,1058
+LEO 400-700 km,Satellites,10681
+LEO 700-1200 km,Satellites,1736
+MEO 1200-19000 km,Satellites,1245
+GNSS 19000-23000 km,Satellites,373
+High incl GEO 23000+ km,Satellites,1491
+LEO 0-400 km,Debris,30
+LEO 400-700 km,Debris,1505
+LEO 700-1200 km,Debris,7147
+MEO 1200-19000 km,Debris,3081
+GNSS 19000-23000 km,Debris,581
+High incl GEO 23000+ km,Debris,221
+LEO 0-400 km,Rocket_Bodies,18
+LEO 400-700 km,Rocket_Bodies,259
+LEO 700-1200 km,Rocket_Bodies,550
+MEO 1200-19000 km,Rocket_Bodies,696
+GNSS 19000-23000 km,Rocket_Bodies,296
+High incl GEO 23000+ km,Rocket_Bodies,383

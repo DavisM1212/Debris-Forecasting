@@ -1,11 +1,16 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
+import matplotlib.pyplot as plt
+from matplotlib.patches import Wedge
+import matplotlib.patheffects as pe
+from matplotlib.font_manager import FontProperties
+import math
 import streamlit as st
 
 from dashboard_helpers import (
     growth_rate_annualized,
-    pct_delta,
     quantiles_over_time,
     summarize_paths_at_year,
 )
@@ -34,18 +39,18 @@ st.markdown("---")
 # SCENARIOS / ORIGINAL CONSTANTS
 # ----------------------------------
 SCENARIOS = {
-    "NoMit_Exp0.0045": {"pmd_comp": 0.20, "P8": 0.0045},
+    "PMD25_Exp0.0010": {"pmd_comp": 0.90, "P8": 0.0010},
     "PMD25_Exp0.0045": {"pmd_comp": 0.90, "P8": 0.0045},
     "NoMit_Exp0.0010": {"pmd_comp": 0.20, "P8": 0.0010},
-    "PMD25_Exp0.0010": {"pmd_comp": 0.90, "P8": 0.0010},
+    "NoMit_Exp0.0045": {"pmd_comp": 0.20, "P8": 0.0045},
 }
 
 SCENARIO_META = {
-    "NoMit_Exp0.0045": {
-        "label": "Status quo | 0.45% expl",
-        "color": "#A50021",
-        "pair_key": "Exp0.0045",
-        "mitigated": False,
+    "PMD25_Exp0.0010": {
+        "label": "PMD 90% | 0.10% expl",
+        "color": "#4682B4",
+        "pair_key": "Exp0.0010",
+        "mitigated": True,
     },
     "PMD25_Exp0.0045": {
         "label": "PMD 90% | 0.45% expl",
@@ -59,11 +64,11 @@ SCENARIO_META = {
         "pair_key": "Exp0.0010",
         "mitigated": False,
     },
-    "PMD25_Exp0.0010": {
-        "label": "PMD 90% | 0.10% expl",
-        "color": "#4682B4",
-        "pair_key": "Exp0.0010",
-        "mitigated": True,
+    "NoMit_Exp0.0045": {
+        "label": "Status quo | 0.45% expl",
+        "color": "#A50021",
+        "pair_key": "Exp0.0045",
+        "mitigated": False,
     },
 }
 
@@ -82,16 +87,16 @@ N_PATHS = 300
 selected_scenarios = st.sidebar.multiselect(
     "Scenarios to show",
     options=[
-        "NoMit_Exp0.0045",
+        "PMD25_Exp0.0010",
         "PMD25_Exp0.0045",
         "NoMit_Exp0.0010",
-        "PMD25_Exp0.0010",
+        "NoMit_Exp0.0045",
     ],
     default=[
-        "NoMit_Exp0.0045",
+        "PMD25_Exp0.0010",
         "PMD25_Exp0.0045",
         "NoMit_Exp0.0010",
-        "PMD25_Exp0.0010",
+        "NoMit_Exp0.0045",
     ],
     format_func=lambda x: SCENARIO_META[x]["label"],
 )
@@ -149,6 +154,237 @@ def format_cost_musd(value_musd: float) -> str:
         return f"${value_musd/1000:.2f}B"
     return f"${value_musd:.0f}M"
 
+
+@st.cache_data(show_spinner=True)
+def load_orbital_shell_counts(path: str) -> pd.DataFrame | None:
+    """Load orbital shell counts long-form data (Band, Object_Type, Count)."""
+    file_path = path.rstrip("/") + "/orbital_shell_counts_long.csv"
+    try:
+        df = pd.read_csv(file_path)
+    except FileNotFoundError:
+        return None
+    required = {"Band", "Object_Type", "Count"}
+    if not required.issubset(df.columns):
+        return None
+    df["Count"] = pd.to_numeric(df["Count"], errors="coerce").fillna(0)
+    df = df.dropna(subset=["Band", "Object_Type"])
+    df = df[df["Count"] > 0]
+    return df
+
+
+def prep_orbital_bands(df: pd.DataFrame) -> pd.DataFrame:
+    """Return cleaned df with Group column."""
+    obj = df["Object_Type"].astype(str).str.lower()
+    is_debris = obj.str.contains("debris") | obj.str.contains("rocket_bodies") | obj.str.contains("r/b")
+    out = df.copy()
+    out["Group"] = np.where(is_debris, "Debris", "Satellites")
+    out["Count"] = pd.to_numeric(out["Count"], errors="coerce").fillna(0)
+    out = out[out["Count"] > 0]
+    return out
+
+
+def make_orbital_rings(df: pd.DataFrame, highlight_band: str | None = None):
+    """Render orbital band rings (Debris vs Satellites) in the original style."""
+    # Config tuned to original figure
+    BASE_RADIUS = 1.0
+    RING_SPACING = 0.70
+    THICKNESS_MIN = 0.25
+    THICKNESS_MAX_EXTRA = 1.60
+    POWER_EXP = 1.3
+    START_ANGLE_DEG = 90.0
+    ALPHA = 0.95
+    FIGSIZE = (8.5, 8.5)
+    MARGIN = 0.60
+    COLOR_MAP = {'Debris': '#d62728', 'Satellites': '#1f77b4'}
+    BG_COL = '#111219'
+    LABEL_FP = FontProperties(family='Arial', weight='bold', size=11)
+    TEXT_OUTLINE = [pe.withStroke(linewidth=2.8, foreground='black')]
+    CHAR_SPACING_BOOST = 0.10
+    CHAR_DEG_AT_R1 = 13.0
+    MIN_ARC_DEG = 40
+    MAX_ARC_DEG = 120
+
+    def compute_arc_deg(text: str, r: float) -> float:
+        n = max(1, len(text))
+        deg_per_char = CHAR_DEG_AT_R1 / max(0.2, r)
+        raw = (n + 0) * deg_per_char * (1.0 + CHAR_SPACING_BOOST)
+        return max(MIN_ARC_DEG, min(MAX_ARC_DEG, raw))
+
+    def curved_label_simple(ax, text, r, theta_center_deg, arc_deg, fp=LABEL_FP,
+                            color='white', outline=True):
+        text = str(text)
+        if not text:
+            return
+        theta_center = math.radians(theta_center_deg)
+        half_span = math.radians(max(5.0, arc_deg) / 2.0) * 0.92
+        theta1 = theta_center - half_span
+        theta2 = theta_center + half_span
+
+        x1 = r * math.cos(theta1)
+        x2 = r * math.cos(theta2)
+        if x1 <= x2:
+            start, end, step_sign = theta1, theta2, +1.0
+        else:
+            start, end, step_sign = theta2, theta1, -1.0
+
+        n = len(text)
+        if n == 1:
+            thetas = [0.5 * (start + end)]
+        else:
+            usable = abs(end - start)
+            base_step = usable / (n - 1)
+            step = base_step * (1.0 + CHAR_SPACING_BOOST)
+            total = step * (n - 1)
+            if total > usable:
+                step *= usable / total
+            thetas = [start + step_sign * i * step for i in range(n)]
+
+        for ch, ang in zip(text, thetas):
+            x = r * math.cos(ang)
+            y = r * math.sin(ang)
+            rot = math.degrees(ang) - 90.0
+            ax.text(
+                x, y, ch, ha='center', va='center',
+                rotation=rot, rotation_mode='anchor',
+                fontproperties=fp, color=color,
+                path_effects=(TEXT_OUTLINE if outline else None)
+            )
+
+    # Prepare data
+    bands = list(df['Band'].drop_duplicates())
+    obj = df['Object_Type'].astype(str).str.lower()
+    is_debris = obj.str.contains('debris') | obj.str.contains('rocket_bodies') | obj.str.contains('r/b')
+    df = df.copy()
+    df['Group'] = np.where(is_debris, 'Debris', 'Satellites')
+    group_order = ['Debris', 'Satellites']
+
+    agg = df.groupby(['Band', 'Group'], as_index=False)['Count'].sum()
+    totals = agg.groupby('Band', as_index=False)['Count'].sum().rename(columns={'Count': 'Total'})
+    merged = agg.merge(totals, on='Band', how='left')
+    merged['Share'] = np.where(merged['Total'] > 0, merged['Count']/merged['Total'], 0.0)
+
+    band_total_map = {b: float(totals.loc[totals['Band'] == b, 'Total'].values[0]) for b in bands}
+    vals = np.array([band_total_map[b] for b in bands], dtype=float)
+    vmax = float(vals.max()) if len(vals) else 1.0
+
+    def scale_value(v):
+        if vmax <= 0:
+            return 0.0
+        x = v / vmax
+        return x ** POWER_EXP
+
+    fig, ax = plt.subplots(figsize=FIGSIZE, subplot_kw=dict(aspect='equal'), facecolor=BG_COL)
+    ax.set_axis_off()
+
+    current_radius = BASE_RADIUS
+    max_outer_radius = current_radius
+    ring_bounds = []
+
+    for band in bands:
+        total = band_total_map.get(band, 0.0)
+        if total <= 0:
+            continue
+
+        w = float(max(0.0, min(1.0, scale_value(total))))
+        thickness = THICKNESS_MIN + THICKNESS_MAX_EXTRA * w
+        inner_r, outer_r = current_radius, current_radius + thickness
+
+        bdf = merged[merged['Band'] == band].set_index('Group')
+        shares = [float(bdf['Share'].get(g, 0.0)) for g in group_order]
+
+        start = START_ANGLE_DEG % 360.0
+        edge_w = 1.0 if band != highlight_band else 2.2
+        band_alpha = ALPHA if band != highlight_band else 1.0
+        for share, g in zip(shares, group_order):
+            sweep = 360.0 * share
+            if sweep <= 0:
+                continue
+            theta1, theta2 = start, (start + sweep) % 360.0
+            wedge = Wedge(
+                (0, 0), r=outer_r, theta1=theta1, theta2=theta2,
+                width=(outer_r - inner_r),
+                facecolor=COLOR_MAP.get(g, None),
+                edgecolor='white', linewidth=edge_w,
+                alpha=band_alpha, label=g
+            )
+            ax.add_patch(wedge)
+            start = (start + sweep) % 360.0
+
+        ring_bounds.append({'band': band, 'inner': inner_r, 'outer': outer_r})
+        current_radius = outer_r + RING_SPACING
+        max_outer_radius = max(max_outer_radius, outer_r)
+
+    TOP_ANGLE = 90
+    OUTER_BLEED = 0.60
+    for idx, rb in enumerate(ring_bounds):
+        band = rb['band']
+        if idx == 0:
+            next_inner = ring_bounds[1]['inner'] if len(ring_bounds) > 1 else rb['outer'] + RING_SPACING - 0.2
+            r_label = (rb['outer'] + next_inner - 0.2) / 2.0
+        elif idx < len(ring_bounds) - 1:
+            next_inner = ring_bounds[idx + 1]['inner']
+            r_label = (rb['outer'] + next_inner - 0.2) / 2.0
+        else:
+            r_label = rb['outer'] + OUTER_BLEED * (RING_SPACING - 0.2)
+
+        arc_deg = compute_arc_deg(band, r_label)
+        curved_label_simple(ax, band, r=r_label, theta_center_deg=TOP_ANGLE, arc_deg=arc_deg, fp=LABEL_FP)
+
+    R = max_outer_radius + MARGIN
+    ax.set_xlim(-R, R)
+    ax.set_ylim(-R, R)
+
+    handles, labels = ax.get_legend_handles_labels()
+    seen, H, L = set(), [], []
+    for h, l in zip(handles, labels):
+        if l and l not in seen:
+            seen.add(l)
+            H.append(h)
+            L.append(l)
+    if H:
+        leg = ax.legend(H, L, loc='lower right', frameon=False, title='Object Type')
+        plt.setp(leg.get_texts(), fontsize=12, color='white')
+        plt.setp(leg.get_title(), fontsize=13, color='white')
+
+    ax.set_title(
+        'Distribution of Satellites and Debris Across Orbital Bands',
+        pad=20,
+        fontsize=18, fontweight='bold', color='white'
+    )
+    fig.tight_layout()
+    return fig
+
+
+def make_orbital_rings_plotly(df: pd.DataFrame):
+    """Interactive sunburst fallback with clearer styling."""
+    agg = df.groupby(["Band", "Group"], as_index=False)["Count"].sum()
+    agg["Count"] = pd.to_numeric(agg["Count"], errors="coerce").fillna(0)
+    fig = px.sunburst(
+        agg,
+        path=["Band", "Group"],
+        values="Count",
+        color="Group",
+        color_discrete_map={"Debris": "#d62728", "Satellites": "#1f77b4"},
+        height=800,
+        branchvalues="total",
+    )
+    fig.update_traces(
+        insidetextorientation="radial",
+        textinfo="label+percent parent",
+        hovertemplate="<b>%{label}</b><br>Count: %{value:,.0f}<br>% of parent: %{percentParent:.1%}<extra></extra>",
+        marker=dict(line=dict(color="#ffffff", width=1.2)),
+    )
+    fig.update_layout(
+        margin=dict(t=60, l=0, r=0, b=0),
+        title="Satellites vs Debris by orbital band (interactive)",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font=dict(color="#111111", size=14, family="Arial"),
+        uniformtext_minsize=12,
+        showlegend=True,
+    )
+    return fig
+
 # ----------------------------------
 # LAMBDA SHAPES (FROM YOUR CODE)
 # ----------------------------------
@@ -183,7 +419,7 @@ def annual_decay_factor_core(t_year, base_scale=1.0, amp_scale=1.0):
 def scale_for_P8(class_name, P8_target):
     base = LAM_BASE[class_name]
     t = np.linspace(0.0, 8*DAY, 8001)
-    A = np.trapz(base(t), t)
+    A = np.trapezoid(base(t), t)
     A = max(A, 1e-12)
     return -np.log(1.0 - P8_target)/A
 
@@ -194,7 +430,7 @@ def yearly_hazard_matrix(class_name, k_scale, max_age=200):
     H = np.zeros_like(ages, dtype=float)
     for a in ages:
         tt = a*DAY + grid
-        H[a] = k_scale * np.trapz(base(tt), tt)
+        H[a] = k_scale * np.trapezoid(base(tt), tt)
     return H
 
 def amp_rbsoz_from_P8(P8, base=0.001, gain=0.55):
@@ -444,7 +680,7 @@ def run_fan_cached(scn_name, N_paths, N_years_fwd, HIST_TAIL, BASELINE_YEAR, coh
 
     N_eff_ref = cohorts0_local["SC"].sum() + cohorts0_local["RB"].sum() + W_SOZ*cohorts0_local["SOZ"].sum()
     N_eff0 = N_eff_ref + W_FRAG*0.0
-    TARGET_BASELINE_EFF = 1.2e4
+    TARGET_BASELINE_EFF = 36000.0
     scale_eff = TARGET_BASELINE_EFF / max(N_eff0, 1.0)
 
     Ns, Cs = [], []
@@ -523,6 +759,16 @@ else:
     else:
         best_pack = fans[best_scenario]
 
+    worst_scenario = "NoMit_Exp0.0045"
+    if worst_scenario not in fans:
+        YEARS, Ns, Cs = run_fan_cached(
+            worst_scenario, N_PATHS, N_YEARS_FWD, HIST_TAIL,
+            BASELINE_YEAR, cohorts0, tail_mean
+        )
+        worst_pack = {"YEARS": YEARS, "N": Ns, "C": Cs}
+    else:
+        worst_pack = fans[worst_scenario]
+
     years = next(iter(fans.values()))["YEARS"]
     default_focus_year = int(min(years[0] + 50, years[-1]))
 
@@ -556,27 +802,8 @@ else:
     best_base_obj = float(np.median(best_pack["N"][:, 0]))
     best_growth = growth_rate_annualized(best_base_obj, best_obj_summary["median"], elapsed_years)
 
-    pair_name = find_pair_scenario(focus_scenario)
-    collisions_avoided = None
-    cost_avoided_musd = None
-    objects_delta = None
-    coll_pct_reduction = None
-    if pair_name and pair_name in fans:
-        pair_pack = fans[pair_name]
-        pair_obj = summarize_paths_at_year(years, pair_pack["N"], focus_year)
-        pair_coll = summarize_paths_at_year(years, pair_pack["C"], focus_year)
-
-        if SCENARIO_META[focus_scenario]["mitigated"]:
-            mitig_obj, mitig_coll = obj_summary, coll_summary
-            base_obj, base_coll = pair_obj, pair_coll
-        else:
-            mitig_obj, mitig_coll = pair_obj, pair_coll
-            base_obj, base_coll = obj_summary, coll_summary
-
-        collisions_avoided = base_coll["median"] - mitig_coll["median"]
-        objects_delta = base_obj["median"] - mitig_obj["median"]
-        cost_avoided_musd = max(0.0, collisions_avoided) * COLLISION_COST_MUSD
-        coll_pct_reduction = pct_delta(mitig_coll["median"], base_coll["median"])
+    worst_obj_summary = summarize_paths_at_year(worst_pack["YEARS"], worst_pack["N"], focus_year)
+    worst_coll_summary = summarize_paths_at_year(worst_pack["YEARS"], worst_pack["C"], focus_year)
 
     st.markdown("### Impact snapshot")
     kpi_cols = st.columns(3)
@@ -596,34 +823,29 @@ else:
         delta=f"Delta vs best-case: {(growth - best_growth)*100:+.2f}%",
     )
     st.markdown("### Financial & risk framing")
-    st.markdown("### Financial & risk framing")
     fin_cols = st.columns(3)
     fin_cols[0].metric(
         "Expected loss (median)",
         format_cost_musd(coll_summary["median"] * COLLISION_COST_MUSD),
         delta=f"Delta vs best-case: {format_cost_musd((coll_summary['median'] - best_coll_summary['median']) * COLLISION_COST_MUSD)}",
     )
-    if collisions_avoided is not None:
-        delta_parts = []
-        if objects_delta is not None:
-            delta_parts.append(f"{objects_delta:,.0f} fewer objects")
-        if coll_pct_reduction is not None:
-            delta_parts.append(f"{coll_pct_reduction*100:+.1f}% vs paired")
-        delta_text = " | ".join(delta_parts) if delta_parts else None
 
-        fin_cols[1].metric(
-            "Collisions avoided (vs paired)",
-            f"{collisions_avoided:.2f}",
-            delta=delta_text or f"Best-case collisions: {best_coll_summary['median']:.2f}"
-        )
-        fin_cols[2].metric(
-            "Loss avoided",
-            format_cost_musd(cost_avoided_musd),
-            delta=f"Best-case loss: {format_cost_musd(best_coll_summary['median'] * COLLISION_COST_MUSD)}"
-        )
-    else:
-        fin_cols[1].metric("Collisions avoided (vs paired)", "N/A", delta="Pair not selected")
-        fin_cols[2].metric("Loss avoided", "N/A", delta=f"Best-case loss: {format_cost_musd(best_coll_summary['median'] * COLLISION_COST_MUSD)}")
+    collisions_reduced_vs_worst = worst_coll_summary["median"] - coll_summary["median"]
+    reduction_pct_vs_worst = None
+    if worst_coll_summary["median"] > 0:
+        reduction_pct_vs_worst = collisions_reduced_vs_worst / worst_coll_summary["median"]
+
+    fin_cols[1].metric(
+        "Collisions avoided vs worst-case (NoMit 0.45% expl)",
+        f"{collisions_reduced_vs_worst:.2f}",
+        delta=(f"{reduction_pct_vs_worst*100:+.1f}% vs worst-case" if reduction_pct_vs_worst is not None else None),
+    )
+    loss_avoided_vs_worst = max(0.0, collisions_reduced_vs_worst) * COLLISION_COST_MUSD
+    fin_cols[2].metric(
+        "Loss avoided vs worst-case",
+        format_cost_musd(loss_avoided_vs_worst),
+        delta=f"Worst-case loss: {format_cost_musd(worst_coll_summary['median'] * COLLISION_COST_MUSD)}",
+    )
 
     st.markdown("### Projections")
 
@@ -638,9 +860,8 @@ else:
         template="simple_white",
         legend_title="Scenarios",
         height=750,
-        yaxis=dict(range=[36000, None]),
     )
-    st.plotly_chart(obj_fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(obj_fig, width="stretch", config={"displayModeBar": False})
 
     coll_fig = go.Figure()
     for name, pack in fans.items():
@@ -654,4 +875,61 @@ else:
         legend_title="Scenarios",
         height=750,
     )
-    st.plotly_chart(coll_fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(coll_fig, width="stretch", config={"displayModeBar": False})
+
+    st.markdown("### Orbital congestion by band")
+    orbital_df = load_orbital_shell_counts(DATA_PATH)
+    if orbital_df is None or orbital_df.empty:
+        st.info("Orbital shell counts not found. Add `orbital_shell_counts_long.csv` to the Data folder to view the orbital congestion rings.")
+    else:
+        orbital_df = prep_orbital_bands(orbital_df)
+        band_totals = orbital_df.groupby("Band")["Count"].sum().sort_values(ascending=False)
+        default_band = band_totals.index[0] if not band_totals.empty else None
+
+        band_choice = st.selectbox(
+            "Focus band",
+            options=list(band_totals.index),
+            index=0 if default_band else None,
+        )
+
+        fig_orb = make_orbital_rings_plotly(orbital_df)
+        st.plotly_chart(fig_orb, width="stretch", config={"displayModeBar": False})
+
+        # KPI cards for selected band
+        band_slice = orbital_df[orbital_df["Band"] == band_choice]
+        band_total = float(band_slice["Count"].sum())
+        debris_count = float(band_slice.loc[band_slice["Group"] == "Debris", "Count"].sum())
+        sat_count = float(band_total - debris_count)
+        debris_share = (debris_count / band_total) if band_total > 0 else 0.0
+        sat_share = 1.0 - debris_share if band_total > 0 else 0.0
+
+        st.markdown("#### Band snapshot")
+        bcols = st.columns(3)
+        bcols[0].metric("Total objects", f"{band_total:,.0f}", delta=None)
+        bcols[1].metric("Debris share", f"{debris_share*100:.1f}%", delta=f"Debris: {debris_count:,.0f}")
+        bcols[2].metric("Satellites share", f"{sat_share*100:.1f}%", delta=f"Satellites: {sat_count:,.0f}")
+
+        # Mini stack comparison vs best/worst
+        worst_band = band_totals.index[0]
+        best_band = band_totals.index[-1]
+        mini = []
+        for label, bname in [("Focus", band_choice), ("Most crowded", worst_band), ("Least crowded", best_band)]:
+            bdf = orbital_df[orbital_df["Band"] == bname]
+            total_b = float(bdf["Count"].sum())
+            debris_b = float(bdf.loc[bdf["Group"] == "Debris", "Count"].sum())
+            sat_b = total_b - debris_b
+            mini.append({"Label": label, "Band": bname, "Type": "Debris", "Count": debris_b})
+            mini.append({"Label": label, "Band": bname, "Type": "Satellites", "Count": sat_b})
+        mini_df = pd.DataFrame(mini)
+        fig_mini = px.bar(
+            mini_df,
+            x="Label",
+            y="Count",
+            color="Type",
+            color_discrete_map={"Debris": "#d62728", "Satellites": "#1f77b4"},
+            barmode="stack",
+            title="Band mix comparison",
+            height=360,
+        )
+        fig_mini.update_layout(legend_title="Object Type", xaxis_title=None, yaxis_title="Objects")
+        st.plotly_chart(fig_mini, width="stretch", config={"displayModeBar": False})
