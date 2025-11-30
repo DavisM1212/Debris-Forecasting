@@ -31,6 +31,99 @@ SENTIMENT_COLORS = {
     "bad": "#b91c1c",
 }
 
+
+def _generate_star_positions(
+    n: int,
+    rng: np.random.Generator,
+    cluster_fraction: float = 0.25,
+    n_clusters: int = 4,
+    cluster_spread: float = 6.0,
+) -> list[tuple[float, float]]:
+    """Stratified jittered grid plus a few clustered points for even-yet-random coverage."""
+    positions: list[tuple[float, float]] = []
+    base_count = max(int(n * (1 - cluster_fraction)), 0)
+
+    # Stratified grid for even coverage
+    grid_side = max(int(np.ceil(np.sqrt(base_count))), 1)
+    cell = 100.0 / grid_side
+    for row in range(grid_side):
+        for col in range(grid_side):
+            if len(positions) >= base_count:
+                break
+            jitter_x = rng.uniform(-0.35, 0.35) * cell
+            jitter_y = rng.uniform(-0.35, 0.35) * cell
+            x = (col + 0.5) * cell + jitter_x
+            y = (row + 0.5) * cell + jitter_y
+            positions.append((np.clip(x, 0, 100), np.clip(y, 0, 100)))
+
+    # Clustered points for natural variation
+    cluster_count = n - len(positions)
+    if cluster_count > 0:
+        centers = rng.uniform(12, 88, size=(n_clusters, 2))
+        counts = rng.multinomial(cluster_count, [1 / n_clusters] * n_clusters)
+        for idx, c in enumerate(counts):
+            if c == 0:
+                continue
+            cx, cy = centers[idx]
+            xs = rng.normal(cx, cluster_spread, size=c)
+            ys = rng.normal(cy, cluster_spread, size=c)
+            for x, y in zip(xs, ys):
+                positions.append((float(np.clip(x, 0, 100)), float(np.clip(y, 0, 100))))
+
+    return positions[:n]
+
+
+def _build_star_gradients(
+    n: int,
+    seed: int,
+    size_range: tuple[float, float] = (0.8, 2.6),
+    opacity_range: tuple[float, float] = (0.45, 0.85),
+    big_size_range: tuple[float, float] | None = (2.8, 4.8),
+    big_prob: float = 0.18,
+) -> str:
+    """Return a comma-separated list of radial-gradient definitions for star dots."""
+    rng = np.random.default_rng(seed)
+    palette = [
+        (247, 249, 253),  # ink white
+        (245, 191, 60),   # orbital gold
+        (106, 200, 255),  # accent cyan
+    ]
+    positions = _generate_star_positions(n, rng)
+
+    gradients = []
+    for i in range(n):
+        if big_size_range and rng.random() < big_prob:
+            size = rng.uniform(*big_size_range)
+            alpha = rng.uniform(max(opacity_range[0], 0.65), 0.95)
+        else:
+            size = rng.uniform(*size_range)
+            alpha = rng.uniform(*opacity_range)
+        x_pct, y_pct = positions[i]
+        r, g, b = palette[i % len(palette)]
+        gradients.append(
+            f"radial-gradient({size:.2f}px {size:.2f}px at {x_pct:.2f}% {y_pct:.2f}%, "
+            f"rgba({r},{g},{b},{alpha:.2f}), transparent 55%)"
+        )
+    return ",\n            ".join(gradients)
+
+
+STARFIELD_FAR = _build_star_gradients(
+    280,
+    seed=17,
+    size_range=(0.75, 2.2),
+    opacity_range=(0.50, 0.70),
+    big_size_range=(2.4, 4.0),
+    big_prob=0.14,
+)
+STARFIELD_NEAR = _build_star_gradients(
+    180,
+    seed=23,
+    size_range=(1.1, 3.3),
+    opacity_range=(0.65, 0.95),
+    big_size_range=(3.2, 5.2),
+    big_prob=0.22,
+)
+
 st.set_page_config(
     page_title="Space Traffic & Debris Outlook",
     layout="wide",
@@ -129,6 +222,46 @@ st.markdown(
                     linear-gradient(180deg, #0b0f1a 0%, #0b1220 45%, #0c1324 100%);
         color: {APP_THEME["ink"]};
     }}
+    [data-testid="stAppViewContainer"] {{
+        position: relative;
+        background: transparent;
+        z-index: 1;
+        isolation: isolate; /* keep star layers beneath content */
+    }}
+    [data-testid="stAppViewContainer"]::before,
+    [data-testid="stAppViewContainer"]::after {{
+        content: "";
+        position: fixed;
+        inset: -160px; /* allow drift without revealing edges */
+        pointer-events: none;
+        background-repeat: no-repeat;
+        background-size: 140% 140%;
+        z-index: 0;
+    }}
+    [data-testid="stAppViewContainer"]::before {{
+        background-image: {STARFIELD_FAR};
+        opacity: 0.65;
+        animation: starDriftFar 120s linear infinite, starPulse 8s ease-in-out infinite alternate;
+    }}
+    [data-testid="stAppViewContainer"]::after {{
+        background-image: {STARFIELD_NEAR};
+        opacity: 0.72;
+        filter: drop-shadow(0 0 9px rgba(255,255,255,0.12));
+        animation: starDriftNear 110s ease-in-out infinite, starPulse 6s ease-in-out infinite alternate;
+    }}
+    @keyframes starDriftFar {{
+        from {{ transform: translate3d(0,0,0); }}
+        to {{ transform: translate3d(-150px, -105px, 0); }}
+    }}
+    @keyframes starDriftNear {{
+        0% {{ transform: translate3d(0,0,0); }}
+        50% {{ transform: translate3d(150px, 105px, 0); }}
+        100% {{ transform: translate3d(0,0,0); }}
+    }}
+    @keyframes starPulse {{
+        from {{ opacity: 0.48; }}
+        to {{ opacity: 1.00; }}
+    }}
     h1, h2, h3, h4, h5 {{
         color: var(--ink);
         letter-spacing: -0.02em;
@@ -138,7 +271,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("Space Traffic & Debris Outlook")
+st.title("🛰️ Space Traffic & Debris Outlook")
 st.subheader("How cleanup and explosions change debris, collision risk, and dollars.")
 st.caption(
     "Data sources: SATCAT history, Nasa Orbital Debris Quarterly News, ESA Space Environment Report 9.1."
@@ -813,7 +946,7 @@ else:
     years = next(iter(fans.values()))["YEARS"]
     default_focus_year = int(min(years[0] + 50, years[-1]))
 
-    st.markdown("### Scenario and Year Spotlight", help=None)
+    st.markdown("### Scenario and Year Spotlight ✨", help=None)
     focus_cols = st.columns([2, 1], gap="small")
     with focus_cols[0]:
         focus_scenario = st.selectbox(
@@ -845,7 +978,7 @@ else:
     worst_obj_summary = summarize_paths_at_year(worst_pack["YEARS"], worst_pack["N"], focus_year)
     worst_coll_summary = summarize_paths_at_year(worst_pack["YEARS"], worst_pack["C"], focus_year)
 
-    st.markdown(f"#### Decision snapshot for {obj_summary['year']}")
+    st.markdown(f"#### Decision snapshot for {obj_summary['year']} 📸")
     kpi_cols = st.columns(3, gap="small")
 
     obj_delta_vs_best = pct_delta(obj_summary["median"], best_obj_summary["median"])
@@ -898,7 +1031,7 @@ else:
             avoid_sent_top,
         )
 
-    st.markdown("#### Money and risk framing")
+    st.markdown("#### Money and risk framing 💰")
     fin_cols = st.columns(2, gap="small")
     expected_loss = coll_summary["median"] * COLLISION_COST_MUSD
     best_expected_loss = best_coll_summary["median"] * COLLISION_COST_MUSD
@@ -948,7 +1081,7 @@ else:
             combined_sentiment,
         )
 
-    st.markdown("### Projected futures")
+    st.markdown("### Projected futures 📈")
 
     st.caption("Shaded bands show the range of possible Monte Carlo runs; solid lines are medians.")
     obj_fig = go.Figure()
@@ -993,7 +1126,7 @@ else:
     coll_fig.update_xaxes(showgrid=True, gridcolor=GRID_COLOR, zeroline=False, dtick=25, title_standoff=16, color="#e5edff")
     st.plotly_chart(coll_fig, width="stretch", config={"displayModeBar": False})
 
-    st.markdown("### Where the clutter sits today")
+    st.markdown("### Where the clutter sits today 🧹")
     orbital_df = load_orbital_shell_counts(DATA_PATH)
     if orbital_df is None or orbital_df.empty:
         st.info("Orbital shell counts not found. Add `orbital_shell_counts_long.csv` to the Data folder to view the orbital congestion rings.")
@@ -1022,7 +1155,7 @@ else:
         band_global_share = (band_total / total_all) if total_all > 0 else 0.0
         crowd_rank = list(band_totals.index).index(band_choice) + 1 if band_choice in band_totals.index else None
 
-        st.markdown("#### Band snapshot")
+        st.markdown("#### Band snapshot 📸")
         bcols = st.columns(3)
         with bcols[0]:
             render_metric_card(
