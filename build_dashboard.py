@@ -271,7 +271,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🛰️ LEO congestion demands debris mitigation now")
+st.title("🛰️ LEO Congestion Demands Debris Mitigation Now")
 st.subheader("See how cleanup and explosion control reshape debris, collision risk, and cost.")
 st.caption(
     "Data sources: SATCAT history, Nasa Orbital Debris Quarterly News, ESA Space Environment Report 9.1."
