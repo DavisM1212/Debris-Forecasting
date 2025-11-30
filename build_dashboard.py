@@ -125,7 +125,7 @@ STARFIELD_NEAR = _build_star_gradients(
 )
 
 st.set_page_config(
-    page_title="Space Traffic & Debris Outlook",
+    page_title="Prevent a Debris Cascade | Space Traffic Outlook",
     layout="wide",
     page_icon=":satellite:",
 )
@@ -271,8 +271,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🛰️ Space Traffic & Debris Outlook")
-st.subheader("How cleanup and explosions change debris, collision risk, and dollars.")
+st.title("🛰️ LEO congestion demands debris mitigation now")
+st.subheader("See how cleanup and explosion control reshape debris, collision risk, and cost.")
 st.caption(
     "Data sources: SATCAT history, Nasa Orbital Debris Quarterly News, ESA Space Environment Report 9.1."
 )
@@ -542,7 +542,7 @@ def make_orbital_rings_plotly(df: pd.DataFrame):
             trace.marker.colors = colors
     fig.update_layout(
         margin=dict(t=60, l=0, r=0, b=0),
-        title="Satellites vs debris by orbital band",
+        title="Distribution of Satellites and Debris: Risk of Cluttered Bands",
         paper_bgcolor=PLOT_BG,
         plot_bgcolor="#ffffff",
         font=PLOT_FONT,
@@ -978,14 +978,14 @@ else:
     worst_obj_summary = summarize_paths_at_year(worst_pack["YEARS"], worst_pack["N"], focus_year)
     worst_coll_summary = summarize_paths_at_year(worst_pack["YEARS"], worst_pack["C"], focus_year)
 
-    st.markdown(f"#### Decision snapshot for {obj_summary['year']} 📸")
+    st.markdown(f"#### Decide for {obj_summary['year']}: Act on these Conditions 🎯")
     kpi_cols = st.columns(3, gap="small")
 
     obj_delta_vs_best = pct_delta(obj_summary["median"], best_obj_summary["median"])
     obj_sent = sentiment_from_delta(obj_delta_vs_best, better_when="lower", neutral_band=0.25, anchor_best=True)
     with kpi_cols[0]:
         render_metric_card(
-            f"Objects in orbit ({obj_summary['year']})",
+            f"Objects crowding orbit in {obj_summary['year']}",
             f"{obj_summary['median']:,.0f}",
             (
                 f"{format_pct(obj_delta_vs_best, decimals=1, show_sign=True)} vs best mitigation"
@@ -998,7 +998,7 @@ else:
     coll_sent = sentiment_from_delta(coll_delta_vs_best, better_when="lower", neutral_band=0.50, anchor_best=True)
     with kpi_cols[1]:
         render_metric_card(
-            f"Cumulative catastrophic collisions by {coll_summary['year']}",
+            f"Catastrophic collisions on this path by {coll_summary['year']}",
             f"{coll_summary['median']:.2f}",
             (
                 f"{format_pct(coll_delta_vs_best, decimals=1, show_sign=True)} vs best mitigation"
@@ -1022,7 +1022,7 @@ else:
     )
     with kpi_cols[2]:
         render_metric_card(
-            "Collisions avoided vs worst-case",
+            "Collisions you avoid vs worst-case",
             f"{collisions_reduced_vs_worst:.2f}",
             (
                 f"{format_pct(avoid_delta_vs_best, decimals=1, show_sign=True)} vs best mitigation"
@@ -1031,7 +1031,7 @@ else:
             avoid_sent_top,
         )
 
-    st.markdown("#### Money and risk framing 💰")
+    st.markdown("#### Justify Mitigation with Money and Risk 💰")
     fin_cols = st.columns(2, gap="small")
     expected_loss = coll_summary["median"] * COLLISION_COST_MUSD
     best_expected_loss = best_coll_summary["median"] * COLLISION_COST_MUSD
@@ -1039,7 +1039,7 @@ else:
     exp_sent = sentiment_from_delta(exp_loss_delta, better_when="lower", neutral_band=0.50, anchor_best=True)
     with fin_cols[0]:
         render_metric_card(
-            "Expected loss (median)",
+            "Median loss you must budget for",
             format_musd(expected_loss),
             (
                 f"{format_pct(exp_loss_delta, decimals=1, show_sign=True)} vs best mitigation"
@@ -1072,7 +1072,7 @@ else:
     combined_sentiment = "bad" if roi_sent == "bad" else loss_sent
     with fin_cols[1]:
         render_metric_card(
-            "Mitigation value vs worst-case",
+            "Mitigation value unlocked vs worst-case",
             format_musd(loss_avoided_vs_worst),
             (
                 f"Net after spend: {format_musd(net_benefit)} | ROI: {format_pct(roi_pct, decimals=1, show_sign=True)}"
@@ -1081,14 +1081,14 @@ else:
             combined_sentiment,
         )
 
-    st.markdown("### Projected futures 📈")
+    st.markdown("### Choose Mitigation to Bend the Projected Futures 📈")
 
     st.caption("Shaded bands show the range of possible Monte Carlo runs; solid lines are medians.")
     obj_fig = go.Figure()
     for name, pack in fans.items():
         add_fan_traces(obj_fig, pack["YEARS"], pack["N"], SCENARIO_META[name], y_fmt=",.0f")
     obj_fig.update_layout(
-        title=dict(text="Projected large-object population (<10 cm)", y=0.99, yanchor="top", pad=dict(t=6)),
+        title=dict(text="Mitigation Bends the Large-Object Population Curve (<10 cm)", y=0.99, yanchor="top", pad=dict(t=6)),
         xaxis_title="Year",
         yaxis_title="Objects in orbit (effective count)",
         hovermode="x unified",
@@ -1109,7 +1109,7 @@ else:
     for name, pack in fans.items():
         add_fan_traces(coll_fig, pack["YEARS"], pack["C"], SCENARIO_META[name], y_fmt=",.2f")
     coll_fig.update_layout(
-        title=dict(text="Projected catastrophic collisions (cumulative)", y=0.99, yanchor="top", pad=dict(t=6)),
+        title=dict(text="Active Cleanup Slows Catastrophic Collisions (cumulative)", y=0.99, yanchor="top", pad=dict(t=6)),
         xaxis_title="Year",
         yaxis_title="Cumulative catastrophic collisions",
         hovermode="x unified",
@@ -1126,7 +1126,7 @@ else:
     coll_fig.update_xaxes(showgrid=True, gridcolor=GRID_COLOR, zeroline=False, dtick=25, title_standoff=16, color="#e5edff")
     st.plotly_chart(coll_fig, width="stretch", config={"displayModeBar": False})
 
-    st.markdown("### Where the clutter sits today 🧹")
+    st.markdown("### Defuse Cascade Risk: Protect Orbital Assets and Drain Debris 🧹")
     orbital_df = load_orbital_shell_counts(DATA_PATH)
     if orbital_df is None or orbital_df.empty:
         st.info("Orbital shell counts not found. Add `orbital_shell_counts_long.csv` to the Data folder to view the orbital congestion rings.")
@@ -1140,7 +1140,7 @@ else:
 
         # KPI cards for selected band
         band_choice = st.selectbox(
-            "Focus band",
+            "Pick the next band to protect/clean",
             options=list(band_totals.index),
             index=0 if default_band else None,
             help="Bands are altitude slices. Start with the most crowded band.",
@@ -1155,18 +1155,18 @@ else:
         band_global_share = (band_total / total_all) if total_all > 0 else 0.0
         crowd_rank = list(band_totals.index).index(band_choice) + 1 if band_choice in band_totals.index else None
 
-        st.markdown("#### Band snapshot 📸")
+        st.markdown("#### Band Snapshot: Safeguard our Infrastructure 📸")
         bcols = st.columns(3)
         with bcols[0]:
             render_metric_card(
-                "Share of all tracked objects",
+                "Infrastructure share at stake",
                 f"{band_global_share*100:.1f}%",
                 f"Objects in band: {band_total:,.0f}",
                 "neutral",
             )
         with bcols[1]:
             render_metric_card(
-                "Debris share within band",
+                "Debris share",
                 f"{debris_share*100:.1f}%",
                 f"Debris: {debris_count:,.0f} | Satellites: {sat_count:,.0f}",
                 "neutral",
@@ -1199,7 +1199,7 @@ else:
         color="Type",
         color_discrete_map={"Debris": "#e94b3c", "Satellites": "#3da5ff"},
         barmode="stack",
-        title="Band mix comparison (focus vs extremes)",
+        title="Debris vs Satellites: Focus Band Compared to the Most and Least Crowded",
         height=360,
     )
     fig_mini.update_layout(
