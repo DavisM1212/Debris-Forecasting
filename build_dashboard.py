@@ -2,11 +2,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-import matplotlib.pyplot as plt
-from matplotlib.patches import Wedge
-import matplotlib.patheffects as pe
-from matplotlib.font_manager import FontProperties
-import math
 import streamlit as st
 
 from dashboard_helpers import (
@@ -175,14 +170,14 @@ SCENARIO_META = {
     "PMD25_Exp0.0045": {
         "label": "Goal cleanup | current explosions",
         "tagline": "90% PMD; 0.45% explosion rate",
-        "color": "#3db1ff",
+        "color": "#2fbf71",  # green to distinguish from other scenarios
         "pair_key": "Exp0.0045",
         "mitigated": True,
     },
     "NoMit_Exp0.0010": {
         "label": "Status quo | rare explosions",
         "tagline": "20% PMD; 0.10% explosion rate",
-        "color": "#8dd1ff",
+        "color": APP_THEME["amber"],
         "pair_key": "Exp0.0010",
         "mitigated": False,
     },
@@ -382,177 +377,6 @@ def prep_orbital_bands(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def make_orbital_rings(df: pd.DataFrame, highlight_band: str | None = None):
-    """Render orbital band rings (Debris vs Satellites) in the original style."""
-    # Config tuned to original figure
-    BASE_RADIUS = 1.0
-    RING_SPACING = 0.70
-    THICKNESS_MIN = 0.25
-    THICKNESS_MAX_EXTRA = 1.60
-    POWER_EXP = 1.3
-    START_ANGLE_DEG = 90.0
-    ALPHA = 0.95
-    FIGSIZE = (8.5, 8.5)
-    MARGIN = 0.60
-    COLOR_MAP = {'Debris': APP_THEME["scarlet"], 'Satellites': APP_THEME["primary"]}
-    BG_COL = APP_THEME["surface"]
-    LABEL_FP = FontProperties(family='Arial', weight='bold', size=11)
-    TEXT_OUTLINE = [pe.withStroke(linewidth=2.8, foreground='black')]
-    CHAR_SPACING_BOOST = 0.10
-    CHAR_DEG_AT_R1 = 13.0
-    MIN_ARC_DEG = 40
-    MAX_ARC_DEG = 120
-
-    def compute_arc_deg(text: str, r: float) -> float:
-        n = max(1, len(text))
-        deg_per_char = CHAR_DEG_AT_R1 / max(0.2, r)
-        raw = (n + 0) * deg_per_char * (1.0 + CHAR_SPACING_BOOST)
-        return max(MIN_ARC_DEG, min(MAX_ARC_DEG, raw))
-
-    def curved_label_simple(ax, text, r, theta_center_deg, arc_deg, fp=LABEL_FP,
-                            color='white', outline=True):
-        text = str(text)
-        if not text:
-            return
-        theta_center = math.radians(theta_center_deg)
-        half_span = math.radians(max(5.0, arc_deg) / 2.0) * 0.92
-        theta1 = theta_center - half_span
-        theta2 = theta_center + half_span
-
-        x1 = r * math.cos(theta1)
-        x2 = r * math.cos(theta2)
-        if x1 <= x2:
-            start, end, step_sign = theta1, theta2, +1.0
-        else:
-            start, end, step_sign = theta2, theta1, -1.0
-
-        n = len(text)
-        if n == 1:
-            thetas = [0.5 * (start + end)]
-        else:
-            usable = abs(end - start)
-            base_step = usable / (n - 1)
-            step = base_step * (1.0 + CHAR_SPACING_BOOST)
-            total = step * (n - 1)
-            if total > usable:
-                step *= usable / total
-            thetas = [start + step_sign * i * step for i in range(n)]
-
-        for ch, ang in zip(text, thetas):
-            x = r * math.cos(ang)
-            y = r * math.sin(ang)
-            rot = math.degrees(ang) - 90.0
-            ax.text(
-                x, y, ch, ha='center', va='center',
-                rotation=rot, rotation_mode='anchor',
-                fontproperties=fp, color=color,
-                path_effects=(TEXT_OUTLINE if outline else None)
-            )
-
-    # Prepare data
-    bands = list(df['Band'].drop_duplicates())
-    obj = df['Object_Type'].astype(str).str.lower()
-    is_debris = obj.str.contains('debris') | obj.str.contains('rocket_bodies') | obj.str.contains('r/b')
-    df = df.copy()
-    df['Group'] = np.where(is_debris, 'Debris', 'Satellites')
-    group_order = ['Debris', 'Satellites']
-
-    agg = df.groupby(['Band', 'Group'], as_index=False)['Count'].sum()
-    totals = agg.groupby('Band', as_index=False)['Count'].sum().rename(columns={'Count': 'Total'})
-    merged = agg.merge(totals, on='Band', how='left')
-    merged['Share'] = np.where(merged['Total'] > 0, merged['Count']/merged['Total'], 0.0)
-
-    band_total_map = {b: float(totals.loc[totals['Band'] == b, 'Total'].values[0]) for b in bands}
-    vals = np.array([band_total_map[b] for b in bands], dtype=float)
-    vmax = float(vals.max()) if len(vals) else 1.0
-
-    def scale_value(v):
-        if vmax <= 0:
-            return 0.0
-        x = v / vmax
-        return x ** POWER_EXP
-
-    fig, ax = plt.subplots(figsize=FIGSIZE, subplot_kw=dict(aspect='equal'), facecolor=BG_COL)
-    ax.set_axis_off()
-
-    current_radius = BASE_RADIUS
-    max_outer_radius = current_radius
-    ring_bounds = []
-
-    for band in bands:
-        total = band_total_map.get(band, 0.0)
-        if total <= 0:
-            continue
-
-        w = float(max(0.0, min(1.0, scale_value(total))))
-        thickness = THICKNESS_MIN + THICKNESS_MAX_EXTRA * w
-        inner_r, outer_r = current_radius, current_radius + thickness
-
-        bdf = merged[merged['Band'] == band].set_index('Group')
-        shares = [float(bdf['Share'].get(g, 0.0)) for g in group_order]
-
-        start = START_ANGLE_DEG % 360.0
-        edge_w = 1.0 if band != highlight_band else 2.2
-        band_alpha = ALPHA if band != highlight_band else 1.0
-        for share, g in zip(shares, group_order):
-            sweep = 360.0 * share
-            if sweep <= 0:
-                continue
-            theta1, theta2 = start, (start + sweep) % 360.0
-            wedge = Wedge(
-                (0, 0), r=outer_r, theta1=theta1, theta2=theta2,
-                width=(outer_r - inner_r),
-                facecolor=COLOR_MAP.get(g, None),
-                edgecolor='#e5e7eb', linewidth=edge_w,
-                alpha=band_alpha, label=g
-            )
-            ax.add_patch(wedge)
-            start = (start + sweep) % 360.0
-
-        ring_bounds.append({'band': band, 'inner': inner_r, 'outer': outer_r})
-        current_radius = outer_r + RING_SPACING
-        max_outer_radius = max(max_outer_radius, outer_r)
-
-    TOP_ANGLE = 90
-    OUTER_BLEED = 0.60
-    for idx, rb in enumerate(ring_bounds):
-        band = rb['band']
-        if idx == 0:
-            next_inner = ring_bounds[1]['inner'] if len(ring_bounds) > 1 else rb['outer'] + RING_SPACING - 0.2
-            r_label = (rb['outer'] + next_inner - 0.2) / 2.0
-        elif idx < len(ring_bounds) - 1:
-            next_inner = ring_bounds[idx + 1]['inner']
-            r_label = (rb['outer'] + next_inner - 0.2) / 2.0
-        else:
-            r_label = rb['outer'] + OUTER_BLEED * (RING_SPACING - 0.2)
-
-        arc_deg = compute_arc_deg(band, r_label)
-        curved_label_simple(ax, band, r=r_label, theta_center_deg=TOP_ANGLE, arc_deg=arc_deg, fp=LABEL_FP)
-
-    R = max_outer_radius + MARGIN
-    ax.set_xlim(-R, R)
-    ax.set_ylim(-R, R)
-
-    handles, labels = ax.get_legend_handles_labels()
-    seen, H, L = set(), [], []
-    for h, l in zip(handles, labels):
-        if l and l not in seen:
-            seen.add(l)
-            H.append(h)
-            L.append(l)
-    if H:
-        leg = ax.legend(H, L, loc='lower right', frameon=False, title='Object type')
-        plt.setp(leg.get_texts(), fontsize=12, color=APP_THEME["ink"])
-        plt.setp(leg.get_title(), fontsize=13, color=APP_THEME["ink"])
-
-    ax.set_title(
-        'Distribution of Satellites and Debris Across Orbital Bands',
-        pad=20,
-        fontsize=18, fontweight='bold', color=APP_THEME["ink"]
-    )
-    fig.tight_layout()
-    return fig
-
 
 def make_orbital_rings_plotly(df: pd.DataFrame):
     """Interactive sunburst fallback with clearer styling."""
@@ -563,10 +387,7 @@ def make_orbital_rings_plotly(df: pd.DataFrame):
         path=["Band", "Group"],
         values="Count",
         color="Group",
-        color_discrete_map={
-            "Debris": "#ff914d",
-            "Satellites": "#3db1ff",
-        },
+        color_discrete_map={"Debris": "#e94b3c", "Satellites": "#3da5ff"},
         height=760,
         branchvalues="total",
     )
@@ -574,8 +395,18 @@ def make_orbital_rings_plotly(df: pd.DataFrame):
         insidetextorientation="radial",
         textinfo="label+percent parent",
         hovertemplate="<b>%{label}</b><br>Count: %{value:,.0f}<br>% of parent: %{percentParent:.1%}<extra></extra>",
-        marker=dict(line=dict(color="#ffffff", width=1.2)),
+        marker=dict(line=dict(color="#ffffff", width=1.2), colorscale=None),
     )
+    fig.update_traces(root_color=APP_THEME["amber"], selector=dict(type="sunburst"))
+    if fig.data:
+        trace = fig.data[0]
+        colors = list(getattr(trace.marker, "colors", []))
+        parents = list(getattr(trace, "parents", []))
+        if colors and parents:
+            for idx, parent in enumerate(parents):
+                if parent == "":
+                    colors[idx] = APP_THEME["amber"]
+            trace.marker.colors = colors
     fig.update_layout(
         margin=dict(t=60, l=0, r=0, b=0),
         title="Satellites vs debris by orbital band",
@@ -585,6 +416,8 @@ def make_orbital_rings_plotly(df: pd.DataFrame):
         uniformtext_minsize=12,
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+        sunburstcolorway=[APP_THEME["amber"], "#3da5ff", "#e94b3c"],
+        extendsunburstcolors=True,
     )
     return fig
 
@@ -1231,7 +1064,7 @@ else:
         x="Label",
         y="Count",
         color="Type",
-        color_discrete_map={"Debris": "#ff914d", "Satellites": "#3db1ff"},
+        color_discrete_map={"Debris": "#e94b3c", "Satellites": "#3da5ff"},
         barmode="stack",
         title="Band mix comparison (focus vs extremes)",
         height=360,

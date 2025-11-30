@@ -1,6 +1,8 @@
 import numpy as np
 
 from dashboard_helpers import (
+    format_musd,
+    format_pct,
     growth_rate_annualized,
     pct_delta,
     quantiles_over_time,
@@ -48,3 +50,16 @@ def test_quantiles_over_time_shapes():
 def test_pct_delta_handles_zero_reference():
     assert pct_delta(100, 0) is None
     assert pct_delta(110, 100) == 0.10
+
+
+def test_format_musd_handles_scales_and_sign():
+    assert format_musd(250) == "$250M"
+    assert format_musd(1500) == "$1.5B"
+    assert format_musd(-75) == "-$75M"
+    assert format_musd(0.25) == "$0.250M"
+
+
+def test_format_pct_outputs_sign_when_requested():
+    assert format_pct(0.256, decimals=1) == "25.6%"
+    assert format_pct(-0.034, decimals=1, show_sign=True) == "-3.4%"
+    assert format_pct(0.12, decimals=0, show_sign=True) == "+12%"

@@ -42,3 +42,28 @@ def pct_delta(current: float, reference: float) -> float | None:
     if reference == 0:
         return None
     return (current - reference) / reference
+
+
+def format_musd(value: float, decimals: int = 1) -> str:
+    """Format a value in millions of USD with compact units (M/B)."""
+    if value is None or not np.isfinite(value):
+        return "–"
+    sign = "-" if value < 0 else ""
+    abs_val = abs(float(value))
+    if abs_val >= 1000:
+        return f"{sign}${abs_val/1000:.{decimals}f}B"
+    if abs_val >= 1:
+        return f"{sign}${abs_val:.0f}M"
+    return f"{sign}${abs_val:.3f}M"
+
+
+def format_pct(value: float | None, decimals: int = 1, show_sign: bool = False) -> str:
+    """Human-friendly percent string with optional sign."""
+    if value is None or not np.isfinite(value):
+        return "–"
+    pct_val = value * 100
+    sign = ""
+    if show_sign:
+        sign = "+" if pct_val >= 0 else "-"
+        pct_val = abs(pct_val)
+    return f"{sign}{pct_val:.{decimals}f}%"
