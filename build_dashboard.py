@@ -10,30 +10,149 @@ import math
 import streamlit as st
 
 from dashboard_helpers import (
-    growth_rate_annualized,
+    format_musd,
+    format_pct,
+    pct_delta,
     quantiles_over_time,
     summarize_paths_at_year,
 )
 
 # ----------------------------------
-# STREAMLIT CONFIG
+# STREAMLIT CONFIG & THEME
 # ----------------------------------
+APP_THEME = {
+    "primary": "#f5bf3c",   # orbital gold
+    "secondary": "#6ac8ff", # accent cyan
+    "amber": "#f29f05",
+    "scarlet": "#ff5c5c",
+    "surface": "#0f1626",
+    "ink": "#f7f9fd",
+    "muted": "#9fb0c8",
+}
+
+SENTIMENT_COLORS = {
+    "good": "#15803d",
+    "neutral": "#d97706",
+    "bad": "#b91c1c",
+}
+
 st.set_page_config(
-    page_title="Orbital Debris Risk Outlook",
-    layout="wide"
+    page_title="Space Traffic & Debris Outlook",
+    layout="wide",
+    page_icon=":satellite:",
 )
 
-st.title("Orbital Debris Risk Outlook (<10 cm)")
-st.write("""
-Scenario-based Monte Carlo forecasts of large orbital debris and catastrophic collisions,
-grounded in SATCAT history and aligned with NASA ODPO / ESA space environment practices to
-show how mitigation shifts the future risk curve.
-""")
-st.caption(
-    "NASA Orbital Debris Quarterly News (ODQN 29-3) and ESA Space Environment Report 9.1 inform explosion rates, "
-    "mitigation compliance, and long-term outlook assumptions."
+st.markdown(
+    f"""
+    <style>
+    :root {{
+        --ink: {APP_THEME["ink"]};
+        --muted: {APP_THEME["muted"]};
+        --surface: {APP_THEME["surface"]};
+        --primary: {APP_THEME["primary"]};
+        --accent: {APP_THEME["secondary"]};
+    }}
+    html, body, [class*="css"] {{
+        font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+        color: var(--ink);
+    }}
+    .main .block-container {{
+        padding-top: 0.1rem;
+        max-width: 1400px;
+        padding-bottom: 1.5rem;
+        background: transparent;
+    }}
+    h1 {{ margin-bottom: 0.1rem; }}
+    h2 {{ margin-top: 0.05rem; margin-bottom: 0rem; }}
+    h3 {{ margin-top: 0.0rem; margin-bottom: 0.1rem; }}
+    p, .stMarkdown {{ margin-bottom: 0.0rem; }}
+    [data-testid="stCaption"] {{ margin-top: 0.05rem; margin-bottom: 0.15rem; }}
+    hr {{ margin: 0.15rem 0 0.2rem 0; }}
+    /* tighten select/slider spacing */
+    .stSelectbox > div {{ padding-top: 0rem !important; padding-bottom: 0rem !important; margin-bottom: 0.1rem; }}
+    .stSelectbox label {{ margin-bottom: 0rem; }}
+    .stSlider > div {{ padding-top: 0rem !important; padding-bottom: 0rem !important; }}
+    .stSlider label {{ margin-bottom: 0rem; }}
+    .stColumn > div {{ padding-top: 0rem; padding-bottom: 0.05rem; }}
+    div[data-testid="metric-container"] {{
+        background: {APP_THEME["surface"]};
+        border: 1px solid #1f2937;
+        border-radius: 12px;
+        padding: 12px 14px;
+        box-shadow: 0 10px 26px rgba(0,0,0,0.25);
+    }}
+    .metric-card {{
+        background: #0f1626;
+        border: 1px solid #1f2937;
+        border-radius: 12px;
+        padding: 9px 11px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-height: 110px;
+        max-width: 360px;
+        width: 100%;
+        margin: 0 auto;
+    }}
+    .metric-card .title {{
+        color: #cfd8e3;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }}
+    .metric-card .value {{
+        color: #f5bf3c;
+        font-size: 1.28rem;
+        font-weight: 700;
+    }}
+    .metric-card .delta {{
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        color: #8ee0a3;
+    }}
+    .metric-dot {{
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+    }}
+    .panel {{
+        background: #0f1626;
+        border: 1px solid #1f2937;
+        border-radius: 14px;
+        padding: 14px 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+        margin-bottom: 0.35rem;
+    }}
+    .panel.tight {{ padding: 10px 12px; }}
+    body {{
+        background: radial-gradient(circle at 10% 20%, rgba(245,191,60,0.06), transparent 28%),
+                    radial-gradient(circle at 85% 10%, rgba(106,200,255,0.05), transparent 32%),
+                    linear-gradient(180deg, #0b0f1a 0%, #0b1220 45%, #0c1324 100%);
+        color: {APP_THEME["ink"]};
+    }}
+    h1, h2, h3, h4, h5 {{
+        color: var(--ink);
+        letter-spacing: -0.02em;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
-st.markdown("---")
+
+st.title("Space Traffic & Debris Outlook")
+st.subheader("How cleanup and explosions change debris, collision risk, and dollars.")
+st.caption(
+    "Data sources: SATCAT history, Nasa Orbital Debris Quarterly News, ESA Space Environment Report 9.1."
+)
+st.markdown("<hr style='margin-top:0.15rem; margin-bottom:0.25rem;'/>", unsafe_allow_html=True)
+#guide_cols = st.columns(3)
+#guide_cols[0].markdown("**How to read**\n\nBlue/teal = goal cleanup; amber/red = status quo. Thick line = median, band = uncertainty.")
+#guide_cols[1].markdown("**Spotlight**\n\nYear slider locks every metric to the same point in time. Scenario pick drives all numbers.")
+#guide_cols[2].markdown("**Money lens**\n\nLoss/spend sliders update dollar figures instantly—no extra math.")
 
 # ----------------------------------
 # SCENARIOS / ORIGINAL CONSTANTS
@@ -47,35 +166,112 @@ SCENARIOS = {
 
 SCENARIO_META = {
     "PMD25_Exp0.0010": {
-        "label": "PMD 90% | 0.10% expl",
-        "color": "#4682B4",
+        "label": "Goal cleanup | rare explosions",
+        "tagline": "90% PMD; 0.10% explosion rate",
+        "color": APP_THEME["secondary"],
         "pair_key": "Exp0.0010",
         "mitigated": True,
     },
     "PMD25_Exp0.0045": {
-        "label": "PMD 90% | 0.45% expl",
-        "color": "#2E8B57",
+        "label": "Goal cleanup | current explosions",
+        "tagline": "90% PMD; 0.45% explosion rate",
+        "color": "#3db1ff",
         "pair_key": "Exp0.0045",
         "mitigated": True,
     },
     "NoMit_Exp0.0010": {
-        "label": "Status quo | 0.10% expl",
-        "color": "#FF7043",
+        "label": "Status quo | rare explosions",
+        "tagline": "20% PMD; 0.10% explosion rate",
+        "color": "#8dd1ff",
         "pair_key": "Exp0.0010",
         "mitigated": False,
     },
     "NoMit_Exp0.0045": {
-        "label": "Status quo | 0.45% expl",
-        "color": "#A50021",
+        "label": "Status quo | current explosions",
+        "tagline": "20% PMD; 0.45% explosion rate",
+        "color": APP_THEME["scarlet"],
         "pair_key": "Exp0.0045",
         "mitigated": False,
     },
 }
 
+PLOT_FONT = dict(family="Inter, 'Segoe UI', sans-serif", size=14, color="#e5edff")
+PLOT_BG = "#0c1324"
+GRID_COLOR = "#1f2937"
+
+
+def sentiment_from_delta(
+    delta: float | None,
+    better_when: str = "lower",
+    neutral_band: float = 0.05,
+    anchor_best: bool = False,
+    near_worst_band: float | None = None,
+) -> str:
+    """
+    Return sentiment bucket for coloring: good/neutral/bad.
+
+    anchor_best=True treats parity with the reference (delta ~ 0) as good.
+    neutral_band is the tolerance band (fractional, e.g., 0.05 = 5%).
+    near_worst_band marks a red zone near the worst case for higher-is-better metrics.
+    """
+    if delta is None:
+        return "neutral"
+
+    if anchor_best:
+        if better_when == "higher":
+            if delta >= 0:
+                return "good"
+            if delta >= -neutral_band:
+                return "neutral"
+            return "bad"
+        # lower is better
+        if delta <= 0:
+            return "good"
+        if delta <= neutral_band:
+            return "neutral"
+        return "bad"
+
+    if better_when == "higher":
+        if near_worst_band is not None and delta <= near_worst_band:
+            return "bad"
+        if delta >= neutral_band:
+            return "good"
+        if delta <= -neutral_band:
+            return "bad"
+        return "neutral"
+
+    # lower is better
+    if delta <= -neutral_band:
+        return "good"
+    if delta >= neutral_band:
+        return "bad"
+    return "neutral"
+
+
+def render_metric_card(title: str, value: str, delta_text: str | None, sentiment: str):
+    """Render a custom metric card with sentiment-colored delta."""
+    color = SENTIMENT_COLORS.get(sentiment, SENTIMENT_COLORS["neutral"])
+    delta_txt = delta_text or "No change"
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="title">{title}</div>
+            <div class="value">{value}</div>
+            <div class="delta" style="color:{color}">
+                <span class="metric-dot" style="background:{color}"></span>{delta_txt}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 # ----------------------------------
 # USER INPUTS (SIDEBAR)
 # ----------------------------------
-st.sidebar.header("Scenarios")
+st.sidebar.header("Scenario inputs")
+st.sidebar.write(
+    "Set cleanup compliance (PMD) and explosion likelihood to compare futures."
+)
 
 # Hard-coded defaults for path and simulation sizing (previous sidebar controls)
 DATA_PATH = "./Data"
@@ -85,7 +281,7 @@ N_YEARS_FWD = 200
 N_PATHS = 300
 
 selected_scenarios = st.sidebar.multiselect(
-    "Scenarios to show",
+    "Choose scenarios",
     options=[
         "PMD25_Exp0.0010",
         "PMD25_Exp0.0045",
@@ -99,20 +295,30 @@ selected_scenarios = st.sidebar.multiselect(
         "NoMit_Exp0.0045",
     ],
     format_func=lambda x: SCENARIO_META[x]["label"],
-)
-st.sidebar.expander("What do these scenarios mean?", expanded=False).write(
-    "Explosion rates follow NASA measurements (~0.45% historic vs 0.10% mitigated). "
-    "Mitigation cases assume PMD (post-mission disposal) at 90% per ESA practice."
+    help="Pick at least one. The color legend matches the charts.",
 )
 
-st.sidebar.header("Financial Assumptions")
+with st.sidebar.expander("Scenario definitions", expanded=False):
+    for key in SCENARIOS:
+        meta = SCENARIO_META[key]
+        st.markdown(f"**{meta['label']}** - {meta['tagline']}")
+
+st.sidebar.header("Money lens")
 COLLISION_COST_MUSD = st.sidebar.slider(
-    "Loss per catastrophic collision (USD millions)",
-    min_value=50, max_value=1000, value=250, step=25
+    "Loss per collision event (USD millions)",
+    min_value=50,
+    max_value=1000,
+    value=250,
+    step=25,
+    help="Select value each catastrophic collision.",
 )
 AVOIDANCE_COST_MUSD = st.sidebar.slider(
-    "Avoidance/mitigation spend per collision averted (USD millions)",
-    min_value=1, max_value=100, value=10, step=1
+    "Spend per collision avoidance (USD millions)",
+    min_value=1,
+    max_value=100,
+    value=10,
+    step=1,
+    help="Budgeted cost to avoid one collision (e.g., deorbit or maneuver spend).",
 )
 
 # ----------------------------------
@@ -146,13 +352,6 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     b = int(hex_color[4:6], 16)
     alpha = min(max(alpha, 0.0), 1.0)
     return f"rgba({r},{g},{b},{alpha})"
-
-
-def format_cost_musd(value_musd: float) -> str:
-    """Readable cost string given millions USD."""
-    if value_musd >= 1000:
-        return f"${value_musd/1000:.2f}B"
-    return f"${value_musd:.0f}M"
 
 
 @st.cache_data(show_spinner=True)
@@ -195,8 +394,8 @@ def make_orbital_rings(df: pd.DataFrame, highlight_band: str | None = None):
     ALPHA = 0.95
     FIGSIZE = (8.5, 8.5)
     MARGIN = 0.60
-    COLOR_MAP = {'Debris': '#d62728', 'Satellites': '#1f77b4'}
-    BG_COL = '#111219'
+    COLOR_MAP = {'Debris': APP_THEME["scarlet"], 'Satellites': APP_THEME["primary"]}
+    BG_COL = APP_THEME["surface"]
     LABEL_FP = FontProperties(family='Arial', weight='bold', size=11)
     TEXT_OUTLINE = [pe.withStroke(linewidth=2.8, foreground='black')]
     CHAR_SPACING_BOOST = 0.10
@@ -304,7 +503,7 @@ def make_orbital_rings(df: pd.DataFrame, highlight_band: str | None = None):
                 (0, 0), r=outer_r, theta1=theta1, theta2=theta2,
                 width=(outer_r - inner_r),
                 facecolor=COLOR_MAP.get(g, None),
-                edgecolor='white', linewidth=edge_w,
+                edgecolor='#e5e7eb', linewidth=edge_w,
                 alpha=band_alpha, label=g
             )
             ax.add_patch(wedge)
@@ -342,14 +541,14 @@ def make_orbital_rings(df: pd.DataFrame, highlight_band: str | None = None):
             H.append(h)
             L.append(l)
     if H:
-        leg = ax.legend(H, L, loc='lower right', frameon=False, title='Object Type')
-        plt.setp(leg.get_texts(), fontsize=12, color='white')
-        plt.setp(leg.get_title(), fontsize=13, color='white')
+        leg = ax.legend(H, L, loc='lower right', frameon=False, title='Object type')
+        plt.setp(leg.get_texts(), fontsize=12, color=APP_THEME["ink"])
+        plt.setp(leg.get_title(), fontsize=13, color=APP_THEME["ink"])
 
     ax.set_title(
         'Distribution of Satellites and Debris Across Orbital Bands',
         pad=20,
-        fontsize=18, fontweight='bold', color='white'
+        fontsize=18, fontweight='bold', color=APP_THEME["ink"]
     )
     fig.tight_layout()
     return fig
@@ -364,8 +563,11 @@ def make_orbital_rings_plotly(df: pd.DataFrame):
         path=["Band", "Group"],
         values="Count",
         color="Group",
-        color_discrete_map={"Debris": "#d62728", "Satellites": "#1f77b4"},
-        height=800,
+        color_discrete_map={
+            "Debris": "#ff914d",
+            "Satellites": "#3db1ff",
+        },
+        height=760,
         branchvalues="total",
     )
     fig.update_traces(
@@ -376,12 +578,13 @@ def make_orbital_rings_plotly(df: pd.DataFrame):
     )
     fig.update_layout(
         margin=dict(t=60, l=0, r=0, b=0),
-        title="Satellites vs Debris by orbital band (interactive)",
-        paper_bgcolor="#ffffff",
+        title="Satellites vs debris by orbital band",
+        paper_bgcolor=PLOT_BG,
         plot_bgcolor="#ffffff",
-        font=dict(color="#111111", size=14, family="Arial"),
+        font=PLOT_FONT,
         uniformtext_minsize=12,
         showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
     )
     return fig
 
@@ -698,9 +901,10 @@ def run_fan_cached(scn_name, N_paths, N_years_fwd, HIST_TAIL, BASELINE_YEAR, coh
     YEARS = np.arange(BASELINE_YEAR, BASELINE_YEAR + N_years_fwd + 1)
     return YEARS, Ns, Cs
 
-def add_fan_traces(fig, years, paths, meta, show_band=True):
-    """Add median + 5-95% band for a scenario."""
+def add_fan_traces(fig, years, paths, meta, show_band=True, y_fmt=",.0f"):
+    """Add median + 5-95% band for a scenario with consistent hover styling."""
     q = quantiles_over_time(paths)
+    legendgroup = meta["label"]
     if show_band:
         fig.add_trace(
             go.Scatter(
@@ -710,6 +914,7 @@ def add_fan_traces(fig, years, paths, meta, show_band=True):
                 hoverinfo="skip",
                 showlegend=False,
                 name=None,
+                legendgroup=legendgroup,
             )
         )
         fig.add_trace(
@@ -722,6 +927,7 @@ def add_fan_traces(fig, years, paths, meta, show_band=True):
                 hoverinfo="skip",
                 name=None,
                 showlegend=False,
+                legendgroup=legendgroup,
             )
         )
     fig.add_trace(
@@ -729,8 +935,10 @@ def add_fan_traces(fig, years, paths, meta, show_band=True):
             x=years,
             y=q["p50"],
             mode="lines",
-            line=dict(color=meta["color"], width=3),
+            line=dict(color=meta["color"], width=4),
             name=meta["label"],
+            legendgroup=legendgroup,
+            hovertemplate=f"{meta['label']}<br>Year %{{x}}<br>%{{y:{y_fmt}}}<extra></extra>",
         )
     )
 
@@ -772,112 +980,187 @@ else:
     years = next(iter(fans.values()))["YEARS"]
     default_focus_year = int(min(years[0] + 50, years[-1]))
 
-    st.markdown("### Insight controls")
-    focus_cols = st.columns([2, 1])
+    st.markdown("### Scenario and Year Spotlight", help=None)
+    focus_cols = st.columns([2, 1], gap="small")
     with focus_cols[0]:
         focus_scenario = st.selectbox(
-            "Scenario spotlight",
-            selected_scenarios,
+            label="Scenario spotlight",
+            options=selected_scenarios,
             format_func=lambda x: SCENARIO_META[x]["label"],
+            help="Use colors to link the selection with the charts.",
+            key="focus_scenario",
+            label_visibility="collapsed",
         )
     with focus_cols[1]:
         focus_year = st.slider(
-            "Year in focus",
-            int(years[0]),
-            int(years[-1]),
-            default_focus_year,
+            label="Year in focus",
+            min_value=int(years[0]),
+            max_value=int(years[-1]),
+            value=default_focus_year,
             step=1,
+            help="Scroll to any year in the projection window.",
+            label_visibility="collapsed",
         )
 
     focus_pack = fans[focus_scenario]
     obj_summary = summarize_paths_at_year(years, focus_pack["N"], focus_year)
     coll_summary = summarize_paths_at_year(years, focus_pack["C"], focus_year)
 
-    base_obj_median = float(np.median(focus_pack["N"][:, 0]))
-    elapsed_years = obj_summary["year"] - int(years[0])
-    growth = growth_rate_annualized(base_obj_median, obj_summary["median"], elapsed_years)
-
     best_obj_summary = summarize_paths_at_year(best_pack["YEARS"], best_pack["N"], focus_year)
     best_coll_summary = summarize_paths_at_year(best_pack["YEARS"], best_pack["C"], focus_year)
-    best_base_obj = float(np.median(best_pack["N"][:, 0]))
-    best_growth = growth_rate_annualized(best_base_obj, best_obj_summary["median"], elapsed_years)
 
     worst_obj_summary = summarize_paths_at_year(worst_pack["YEARS"], worst_pack["N"], focus_year)
     worst_coll_summary = summarize_paths_at_year(worst_pack["YEARS"], worst_pack["C"], focus_year)
 
-    st.markdown("### Impact snapshot")
-    kpi_cols = st.columns(3)
-    kpi_cols[0].metric(
-        f"{SCENARIO_META[focus_scenario]['label']} | Objects in {obj_summary['year']}",
-        f"{obj_summary['median']:,.0f}",
-        delta=f"Delta vs best-case: {obj_summary['median'] - best_obj_summary['median']:+,.0f}",
-    )
-    kpi_cols[1].metric(
-        f"Cumulative collisions by {coll_summary['year']}",
-        f"{coll_summary['median']:.2f}",
-        delta=f"Delta vs best-case: {coll_summary['median'] - best_coll_summary['median']:+.2f}",
-    )
-    kpi_cols[2].metric(
-        "Average annual growth",
-        f"{growth*100:.2f}%",
-        delta=f"Delta vs best-case: {(growth - best_growth)*100:+.2f}%",
-    )
-    st.markdown("### Financial & risk framing")
-    fin_cols = st.columns(3)
-    fin_cols[0].metric(
-        "Expected loss (median)",
-        format_cost_musd(coll_summary["median"] * COLLISION_COST_MUSD),
-        delta=f"Delta vs best-case: {format_cost_musd((coll_summary['median'] - best_coll_summary['median']) * COLLISION_COST_MUSD)}",
-    )
+    st.markdown(f"#### Decision snapshot for {obj_summary['year']}")
+    kpi_cols = st.columns(3, gap="small")
+
+    obj_delta_vs_best = pct_delta(obj_summary["median"], best_obj_summary["median"])
+    obj_sent = sentiment_from_delta(obj_delta_vs_best, better_when="lower", neutral_band=0.25, anchor_best=True)
+    with kpi_cols[0]:
+        render_metric_card(
+            f"Objects in orbit ({obj_summary['year']})",
+            f"{obj_summary['median']:,.0f}",
+            (
+                f"{format_pct(obj_delta_vs_best, decimals=1, show_sign=True)} vs best mitigation"
+                if obj_delta_vs_best is not None else None
+            ),
+            obj_sent,
+        )
+
+    coll_delta_vs_best = pct_delta(coll_summary["median"], best_coll_summary["median"])
+    coll_sent = sentiment_from_delta(coll_delta_vs_best, better_when="lower", neutral_band=0.50, anchor_best=True)
+    with kpi_cols[1]:
+        render_metric_card(
+            f"Cumulative catastrophic collisions by {coll_summary['year']}",
+            f"{coll_summary['median']:.2f}",
+            (
+                f"{format_pct(coll_delta_vs_best, decimals=1, show_sign=True)} vs best mitigation"
+                if coll_delta_vs_best is not None else None
+            ),
+            coll_sent,
+        )
 
     collisions_reduced_vs_worst = worst_coll_summary["median"] - coll_summary["median"]
+    best_collisions_reduced_vs_worst = worst_coll_summary["median"] - best_coll_summary["median"]
+    avoid_delta_vs_best = (
+        pct_delta(collisions_reduced_vs_worst, best_collisions_reduced_vs_worst)
+        if best_collisions_reduced_vs_worst > 0 else None
+    )
+    avoid_sent_top = sentiment_from_delta(
+        avoid_delta_vs_best,
+        better_when="higher",
+        neutral_band=0.30,
+        near_worst_band=0.05,
+        anchor_best=True,
+    )
+    with kpi_cols[2]:
+        render_metric_card(
+            "Collisions avoided vs worst-case",
+            f"{collisions_reduced_vs_worst:.2f}",
+            (
+                f"{format_pct(avoid_delta_vs_best, decimals=1, show_sign=True)} vs best mitigation"
+                if avoid_delta_vs_best is not None else None
+            ),
+            avoid_sent_top,
+        )
+
+    st.markdown("#### Money and risk framing")
+    fin_cols = st.columns(2, gap="small")
+    expected_loss = coll_summary["median"] * COLLISION_COST_MUSD
+    best_expected_loss = best_coll_summary["median"] * COLLISION_COST_MUSD
+    exp_loss_delta = pct_delta(expected_loss, best_expected_loss) if best_expected_loss > 0 else None
+    exp_sent = sentiment_from_delta(exp_loss_delta, better_when="lower", neutral_band=0.50, anchor_best=True)
+    with fin_cols[0]:
+        render_metric_card(
+            "Expected loss (median)",
+            format_musd(expected_loss),
+            (
+                f"{format_pct(exp_loss_delta, decimals=1, show_sign=True)} vs best mitigation"
+                if exp_loss_delta is not None else None
+            ),
+            exp_sent,
+        )
+
     reduction_pct_vs_worst = None
     if worst_coll_summary["median"] > 0:
         reduction_pct_vs_worst = collisions_reduced_vs_worst / worst_coll_summary["median"]
-
-    fin_cols[1].metric(
-        "Collisions avoided vs worst-case (NoMit 0.45% expl)",
-        f"{collisions_reduced_vs_worst:.2f}",
-        delta=(f"{reduction_pct_vs_worst*100:+.1f}% vs worst-case" if reduction_pct_vs_worst is not None else None),
+    collisions_avoided = max(0.0, collisions_reduced_vs_worst)
+    loss_avoided_vs_worst = collisions_avoided * COLLISION_COST_MUSD
+    best_loss_avoided_vs_worst = max(0.0, worst_coll_summary["median"] - best_coll_summary["median"]) * COLLISION_COST_MUSD
+    loss_avoid_delta_vs_best = (
+        pct_delta(loss_avoided_vs_worst, best_loss_avoided_vs_worst)
+        if best_loss_avoided_vs_worst > 0 else None
     )
-    loss_avoided_vs_worst = max(0.0, collisions_reduced_vs_worst) * COLLISION_COST_MUSD
-    fin_cols[2].metric(
-        "Loss avoided vs worst-case",
-        format_cost_musd(loss_avoided_vs_worst),
-        delta=f"Worst-case loss: {format_cost_musd(worst_coll_summary['median'] * COLLISION_COST_MUSD)}",
+    avoidance_budget = collisions_avoided * AVOIDANCE_COST_MUSD
+    net_benefit = loss_avoided_vs_worst - avoidance_budget
+    roi_pct = pct_delta(loss_avoided_vs_worst, avoidance_budget) if avoidance_budget > 0 else None
+    roi_sent = "good" if net_benefit > 0 else ("neutral" if net_benefit == 0 else "bad")
+    loss_sent = sentiment_from_delta(
+        loss_avoid_delta_vs_best,
+        better_when="higher",
+        neutral_band=0.30,
+        near_worst_band=0.10,
+        anchor_best=True,
     )
+    combined_sentiment = "bad" if roi_sent == "bad" else loss_sent
+    with fin_cols[1]:
+        render_metric_card(
+            "Mitigation value vs worst-case",
+            format_musd(loss_avoided_vs_worst),
+            (
+                f"Net after spend: {format_musd(net_benefit)} | ROI: {format_pct(roi_pct, decimals=1, show_sign=True)}"
+                if roi_pct is not None else f"Net after spend: {format_musd(net_benefit)}"
+            ),
+            combined_sentiment,
+        )
 
-    st.markdown("### Projections")
+    st.markdown("### Projected futures")
 
+    st.caption("Shaded bands show the range of possible Monte Carlo runs; solid lines are medians.")
     obj_fig = go.Figure()
     for name, pack in fans.items():
-        add_fan_traces(obj_fig, pack["YEARS"], pack["N"], SCENARIO_META[name])
+        add_fan_traces(obj_fig, pack["YEARS"], pack["N"], SCENARIO_META[name], y_fmt=",.0f")
     obj_fig.update_layout(
-        title="Projected Large-Object Population (<10 cm)",
+        title=dict(text="Projected large-object population (<10 cm)", y=0.99, yanchor="top", pad=dict(t=6)),
         xaxis_title="Year",
-        yaxis_title="Objects (<10 cm, effective count)",
+        yaxis_title="Objects in orbit (effective count)",
         hovermode="x unified",
-        template="simple_white",
+        template="none",
         legend_title="Scenarios",
-        height=750,
+        height=700,
+        paper_bgcolor=PLOT_BG,
+        plot_bgcolor="#0f172a",
+        font=PLOT_FONT,
+        margin=dict(t=80, l=85, r=20, b=70),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
     )
+    obj_fig.update_yaxes(tickformat=",", gridcolor=GRID_COLOR, zeroline=False, title_standoff=28, color="#e5edff")
+    obj_fig.update_xaxes(showgrid=True, gridcolor=GRID_COLOR, zeroline=False, dtick=25, title_standoff=16, color="#e5edff")
     st.plotly_chart(obj_fig, width="stretch", config={"displayModeBar": False})
 
     coll_fig = go.Figure()
     for name, pack in fans.items():
-        add_fan_traces(coll_fig, pack["YEARS"], pack["C"], SCENARIO_META[name])
+        add_fan_traces(coll_fig, pack["YEARS"], pack["C"], SCENARIO_META[name], y_fmt=",.2f")
     coll_fig.update_layout(
-        title="Projected Catastrophic Collisions (cumulative)",
+        title=dict(text="Projected catastrophic collisions (cumulative)", y=0.99, yanchor="top", pad=dict(t=6)),
         xaxis_title="Year",
         yaxis_title="Cumulative catastrophic collisions",
         hovermode="x unified",
-        template="simple_white",
+        template="none",
         legend_title="Scenarios",
-        height=750,
+        height=700,
+        paper_bgcolor=PLOT_BG,
+        plot_bgcolor="#0f172a",
+        font=PLOT_FONT,
+        margin=dict(t=80, l=85, r=20, b=70),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
     )
+    coll_fig.update_yaxes(tickformat=",.2f", gridcolor=GRID_COLOR, zeroline=False, title_standoff=28, color="#e5edff")
+    coll_fig.update_xaxes(showgrid=True, gridcolor=GRID_COLOR, zeroline=False, dtick=25, title_standoff=16, color="#e5edff")
     st.plotly_chart(coll_fig, width="stretch", config={"displayModeBar": False})
 
-    st.markdown("### Orbital congestion by band")
+    st.markdown("### Where the clutter sits today")
     orbital_df = load_orbital_shell_counts(DATA_PATH)
     if orbital_df is None or orbital_df.empty:
         st.info("Orbital shell counts not found. Add `orbital_shell_counts_long.csv` to the Data folder to view the orbital congestion rings.")
@@ -886,28 +1169,50 @@ else:
         band_totals = orbital_df.groupby("Band")["Count"].sum().sort_values(ascending=False)
         default_band = band_totals.index[0] if not band_totals.empty else None
 
+        fig_orb = make_orbital_rings_plotly(orbital_df) 
+        st.plotly_chart(fig_orb, width="stretch", config={"displayModeBar": False})
+
+        # KPI cards for selected band
         band_choice = st.selectbox(
             "Focus band",
             options=list(band_totals.index),
             index=0 if default_band else None,
+            help="Bands are altitude slices. Start with the most crowded band.",
         )
 
-        fig_orb = make_orbital_rings_plotly(orbital_df)
-        st.plotly_chart(fig_orb, width="stretch", config={"displayModeBar": False})
-
-        # KPI cards for selected band
         band_slice = orbital_df[orbital_df["Band"] == band_choice]
         band_total = float(band_slice["Count"].sum())
         debris_count = float(band_slice.loc[band_slice["Group"] == "Debris", "Count"].sum())
         sat_count = float(band_total - debris_count)
         debris_share = (debris_count / band_total) if band_total > 0 else 0.0
-        sat_share = 1.0 - debris_share if band_total > 0 else 0.0
+        total_all = float(orbital_df["Count"].sum())
+        band_global_share = (band_total / total_all) if total_all > 0 else 0.0
+        crowd_rank = list(band_totals.index).index(band_choice) + 1 if band_choice in band_totals.index else None
 
         st.markdown("#### Band snapshot")
         bcols = st.columns(3)
-        bcols[0].metric("Total objects", f"{band_total:,.0f}", delta=None)
-        bcols[1].metric("Debris share", f"{debris_share*100:.1f}%", delta=f"Debris: {debris_count:,.0f}")
-        bcols[2].metric("Satellites share", f"{sat_share*100:.1f}%", delta=f"Satellites: {sat_count:,.0f}")
+        with bcols[0]:
+            render_metric_card(
+                "Share of all tracked objects",
+                f"{band_global_share*100:.1f}%",
+                f"Objects in band: {band_total:,.0f}",
+                "neutral",
+            )
+        with bcols[1]:
+            render_metric_card(
+                "Debris share within band",
+                f"{debris_share*100:.1f}%",
+                f"Debris: {debris_count:,.0f} | Satellites: {sat_count:,.0f}",
+                "neutral",
+            )
+        with bcols[2]:
+            rank_text = f"#{crowd_rank} most crowded" if crowd_rank is not None else "Unranked"
+            render_metric_card(
+                "Crowding rank",
+                rank_text,
+                f"Most crowded: {band_totals.index[0]}",
+                "neutral",
+            )
 
         # Mini stack comparison vs best/worst
         worst_band = band_totals.index[0]
@@ -921,15 +1226,23 @@ else:
             mini.append({"Label": label, "Band": bname, "Type": "Debris", "Count": debris_b})
             mini.append({"Label": label, "Band": bname, "Type": "Satellites", "Count": sat_b})
         mini_df = pd.DataFrame(mini)
-        fig_mini = px.bar(
-            mini_df,
-            x="Label",
-            y="Count",
-            color="Type",
-            color_discrete_map={"Debris": "#d62728", "Satellites": "#1f77b4"},
-            barmode="stack",
-            title="Band mix comparison",
-            height=360,
-        )
-        fig_mini.update_layout(legend_title="Object Type", xaxis_title=None, yaxis_title="Objects")
-        st.plotly_chart(fig_mini, width="stretch", config={"displayModeBar": False})
+    fig_mini = px.bar(
+        mini_df,
+        x="Label",
+        y="Count",
+        color="Type",
+        color_discrete_map={"Debris": "#ff914d", "Satellites": "#3db1ff"},
+        barmode="stack",
+        title="Band mix comparison (focus vs extremes)",
+        height=360,
+    )
+    fig_mini.update_layout(
+        legend_title="Object type",
+        xaxis_title=None,
+        yaxis_title="Objects",
+        font=PLOT_FONT,
+        paper_bgcolor=PLOT_BG,
+        plot_bgcolor="#0f172a",
+        margin=dict(t=60, l=40, r=10, b=40),
+    )
+    st.plotly_chart(fig_mini, width="stretch", config={"displayModeBar": False})
