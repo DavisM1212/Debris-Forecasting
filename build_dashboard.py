@@ -153,7 +153,7 @@ st.markdown(
     h1 {{ margin-bottom: 0.1rem; }}
     h2 {{ margin-top: 0.05rem; margin-bottom: 0rem; }}
     h3 {{ margin-top: 0.0rem; margin-bottom: 0.1rem; }}
-    p, .stMarkdown {{ margin-bottom: 0.0rem; }}
+    p, .stMarkdown {{ margin-bottom: 0.25rem; }}
     [data-testid="stCaption"] {{ margin-top: 0.05rem; margin-bottom: 0.15rem; }}
     hr {{ margin: 0.15rem 0 0.2rem 0; }}
     /* tighten select/slider spacing */
