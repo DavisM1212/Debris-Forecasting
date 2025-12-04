@@ -10,9 +10,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# VSCode
-.vscode/
-
 # Documents/Reference
 Docs/
 AGENTS.md
