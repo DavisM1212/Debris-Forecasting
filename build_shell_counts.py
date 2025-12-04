@@ -1,14 +1,14 @@
 import pandas as pd
 import numpy as np
 
-# File definitions
+# File definitions grouped here
 DATA_PATH = './Data/'
 INPUT = 'satcat.csv'
 OUT_WIDE = 'orbital_shell_counts_wide.csv'
 OUT_LONG = 'orbital_shell_counts_long.csv'
 OUT_SUMMARY = 'orbital_shell_summary.csv'
 
-# Contiguous orbital bands for SMA >= 0 (better not be 0...)
+# Define contiguous orbital bands for SMA >= 0; SMA should never be 0
 BANDS = [
     ('LEO 0-400 km',             0,       400),
     ('LEO 400-700 km',           400,     700),
@@ -18,17 +18,17 @@ BANDS = [
     ('High incl GEO 23000+ km',  23000,   np.inf),
 ]
 
-# Map to readable labels
+# Map object type codes to readable labels
 TYPE_MAP = {'PAY': 'Satellites', 'DEB': 'Debris', 'R/B': 'Rocket_Bodies'}
 
-# Orbital constants
+# Constants reused for orbital calculations
 MU_EARTH_KM3_S2 = 398600.4418
 R_EARTH_KM      = 6378.137
 SEC_PER_DAY     = 86400.0
 TWO_PI          = 2.0 * np.pi
 MIN_PER_DAY     = 1440.0
 
-# Load and filter needed columns
+# Load the CSV and filter to the columns needed
 df = pd.read_csv(DATA_PATH + INPUT)
 
 df["OBJECT_TYPE"] = df["OBJECT_TYPE"].astype(str).str.strip().str.upper()
@@ -42,13 +42,13 @@ if "ORBIT_CENTER" in df.columns:
 if "ORBIT_TYPE" in df.columns:
     df = df[df["ORBIT_TYPE"].astype(str).str.strip().str.upper() == "ORB"]
 
-# Coerce numeric data types
+# Coerce numeric columns to floats
 for c in ["APOGEE", "PERIGEE", "PERIOD"]:
     if c in df.columns:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
-# Compute SMA altitude, prefer using apogee and perigee but will use period
-# if there are valid records that don't ahve apogee and perigee data
+# Compute SMA altitude, preferring apogee and perigee data
+# If those are missing but period is valid, fall back to the period field
 use_ap_per = df["APOGEE"].notna() & df["PERIGEE"].notna()
 if "APOGEE" in df.columns and "PERIGEE" in df.columns:
     sma_gee = (df["APOGEE"] + df["PERIGEE"]) / 2.0
@@ -69,10 +69,10 @@ df["SMA"] = np.where(use_ap_per, sma_gee, sma_per)
 df = df.dropna(subset=["SMA"])
 df = df[(df["SMA"] >= 0) & (df["SMA"] <= 2.0e5)]
 
-# Map object types to readable for aggregation
+# Map object types to readable labels for aggregation
 df["Object_Type"] = df["OBJECT_TYPE"].map(TYPE_MAP)
 
-# Bin into orbital bands
+# Bin objects into orbital bands
 edges = [lo for (_, lo, _) in BANDS] + [BANDS[-1][2]]
 labels = [lbl for (lbl, _, _) in BANDS]
 
@@ -80,20 +80,20 @@ df['Band'] = pd.cut(
     df['SMA'],
     bins=edges,
     labels=labels,
-    right=False,          # [low, high)
+    right=False,          # Intervals kept as [low, high)
     include_lowest=True
 )
 
-# Drop any rows that somehow fell outside (shouldn't happen for SMA>=0)
+# Drop any rows that fall outside the bins; that should not happen with SMA >= 0
 df = df.dropna(subset=['Band'])
 
-# Aggregate for saving
-# Wide
+# Aggregate counts before saving
+# Wide format persisted for quick reads
 wide = (
     df.pivot_table(index='Band', columns='Object_Type', values='SMA',
                    aggfunc='count', fill_value=0)
       .astype(int)
-      .reindex(labels)  # keep configured order
+      .reindex(labels)  # Keep the configured order
 )
 
 # Ensure consistent columns for charts
@@ -103,7 +103,7 @@ for col in ['Satellites', 'Debris', 'Rocket_Bodies']:
 
 wide['Total'] = wide[['Satellites', 'Debris', 'Rocket_Bodies']].sum(axis=1)
 
-# Long
+# Long format persisted for charting
 long = (
     wide.reset_index()
         .melt(id_vars='Band',
@@ -111,7 +111,7 @@ long = (
               var_name='Object_Type', value_name='Count')
 )
 
-# Summary
+# Summary metrics included for convenience
 summary = wide.reset_index().copy()
 summary['Debris_Share'] = (summary['Debris'] / summary['Total']).replace([np.inf, np.nan], 0.0)
 summary['Debris_Share_Pct'] = (summary['Debris_Share'] * 100).round(1)

@@ -4,14 +4,16 @@ venv/
 env/
 ENV/
 
-# Python cache
+# Caches
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
 
 # VSCode
 .vscode/
 
-# Documents
+# Documents/Reference
 Docs/
 AGENTS.md
+test_dashboard_helpers.py

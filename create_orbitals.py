@@ -6,25 +6,25 @@ import matplotlib.patheffects as pe
 from matplotlib.font_manager import FontProperties
 import math
 
-# File definitions
+# File path definitions
 DATA_PATH = './Data/'
 INPUT      = 'orbital_shell_counts_long.csv'
 OUT_PNG    = 'orbital_rings_6band_curvedlabels.png'
 OUT_PNG_T  = 'orbital_rings_6band_curvedlabels_transparent.png'
 
-# Layout and scaling
+# Layout and scaling constants for the rings
 BASE_RADIUS = 1.0
 RING_SPACING = 0.70
 THICKNESS_MIN = 0.25
 THICKNESS_MAX_EXTRA = 1.60
-SCALING_MODE = 'power'       # 'power' | 'linear' | 'log'
+SCALING_MODE = 'power'       # Allow scaling modes: 'power' | 'linear' | 'log'
 POWER_EXP = 1.3
 START_ANGLE_DEG = 90.0
 ALPHA = 0.92
 FIGSIZE = (10, 10)
 MARGIN = 0.60
 
-# Fonts and text controls
+# Fonts and text controls grouped together
 TITLE_FONT = dict(fontsize=18, fontweight='bold', family='Arial', color='white')
 LABEL_FP   = FontProperties(family='Arial', weight='bold', size=12)
 LEGEND_FONT_SIZE = 12
@@ -33,25 +33,25 @@ COLOR_MAP = {'Debris': '#d62728', 'Satellites': '#1f77b4'}
 TEXT_OUTLINE = [pe.withStroke(linewidth=3, foreground='white')]
 BG_COL = '#1e1f24'
 
-# Curved label spacing boost between characters as a fraction of avg spacing
+# Curved label spacing boost between characters as a fraction of average spacing
 CHAR_SPACING_BOOST = 0.10
 
-# Arc sizing for curved labels
-CHAR_DEG_AT_R1 = 13.0     # first label gets squished and needs extra boost
-MIN_ARC_DEG    = 40       # keeps short labels readable
-MAX_ARC_DEG    = 120      # prevents wild wrapping
+# Arc sizing bounds for curved labels
+CHAR_DEG_AT_R1 = 13.0     # Extra boost for the first label when it gets squished
+MIN_ARC_DEG    = 40       # Minimum to keep short labels readable
+MAX_ARC_DEG    = 120      # Cap to prevent wild wrapping
 
+# Compute an arc that fits the text at radius r
 def compute_arc_deg(text: str, r: float) -> float:
-# Return an arc that fits the text at radius r
     n = max(1, len(text))
-    # per-char degrees scales ~ 1/r
-    deg_per_char = CHAR_DEG_AT_R1 / max(0.2, r)  # guard very small r
-    # (n-1) gaps, add 1 gap for visual padding
+    # Scale per-character degrees roughly with 1/r
+    deg_per_char = CHAR_DEG_AT_R1 / max(0.2, r)  # Guard against very small r
+    # Treat the label as (n-1) gaps and add one more for padding
     raw = (n + 0) * deg_per_char * (1.0 + CHAR_SPACING_BOOST)
     return max(MIN_ARC_DEG, min(MAX_ARC_DEG, raw))
 
 
-# Load and validate input
+# Load the input CSV and validate expected columns
 df = pd.read_csv(DATA_PATH + INPUT)
 if not {'Band', 'Object_Type', 'Count'}.issubset(df.columns):
     raise ValueError('CSV must have columns: Band, Object_Type, Count')
@@ -60,16 +60,16 @@ df['Count'] = pd.to_numeric(df['Count'], errors='coerce').fillna(0)
 df = df.dropna(subset=['Band', 'Object_Type'])
 df = df[df['Count'] > 0]
 
-# Pull out bands as listed
+# Preserve the band order as listed
 bands = list(df['Band'].drop_duplicates())
 
-# Group rocket bodies into debris
+# Group rocket bodies into the debris bucket
 obj = df['Object_Type'].str.lower()
 is_debris = obj.str.contains('debris') | obj.str.contains('rocket_bodies') | obj.str.contains('r/b')
 df['Group'] = np.where(is_debris, 'Debris', 'Satellites')
 group_order = ['Debris', 'Satellites']
 
-# Aggregate Band by Group
+# Aggregate counts by band and group
 agg = df.groupby(['Band', 'Group'], as_index=False)['Count'].sum()
 totals = agg.groupby('Band', as_index=False)['Count'].sum().rename(columns={'Count': 'Total'})
 merged = agg.merge(totals, on='Band', how='left')
@@ -80,7 +80,7 @@ grand_total = int(sum(band_total_map.values()))
 vals = np.array([band_total_map[b] for b in bands], dtype=float)
 vmax = float(vals.max()) if len(vals) else 1.0
 
-# Helper for ring scaling
+# Helper for scaling ring thickness
 def scale_value(v):
     if vmax <= 0:
       return 0.0
@@ -93,32 +93,31 @@ def scale_value(v):
       return np.log1p(v) / np.log1p(vmax)
     return x ** POWER_EXP
 
-# Curved label helper
+#------------------------------------------------------------------------------
+# Draw text along a circular arc centered directly above the appropriate ring.
+# Text expands in either direction from the centerpoint so too small an
+# arc will squish it together. This was literally the hardest part of this
+# graph, please no break.
+#------------------------------------------------------------------------------
 def curved_label_simple(ax, text, r, theta_center_deg, arc_deg,fp=LABEL_FP,
                         color='black', outline=True):
-    """
-    Draw text along a circular arc centered directly above the appropriate ring.
-    Text expands in either direction from the centerpoint so too small an
-    arc will squish it together. This was literally the hardest part of this
-    graph, please no break.
-    """
     text = str(text)
     if not text:
         return
 
-    # Arc geometry
+    # Set up the arc geometry for the label
     theta_center = math.radians(theta_center_deg)
     half_span = math.radians(max(5.0, arc_deg) / 2.0) * 0.92
     theta1 = theta_center - half_span
     theta2 = theta_center + half_span
 
-    # Keeps labels from mirroring. They kept mirroring...
+    # Guard against mirroring because labels otherwise flip
     x1 = r * math.cos(theta1)
     x2 = r * math.cos(theta2)
     if x1 <= x2:
-        start, end, step_sign = theta1, theta2, +1.0   # CCW
+        start, end, step_sign = theta1, theta2, +1.0   # Step counterclockwise in this branch (CCW)
     else:
-        start, end, step_sign = theta2, theta1, -1.0   # CW
+        start, end, step_sign = theta2, theta1, -1.0   # Step clockwise otherwise (CW)
 
     n = len(text)
     if n == 1:
@@ -135,20 +134,20 @@ def curved_label_simple(ax, text, r, theta_center_deg, arc_deg,fp=LABEL_FP,
     for ch, ang in zip(text, thetas):
         x = r * math.cos(ang)
         y = r * math.sin(ang)
-        rot = math.degrees(ang) - 90.0  # tangent
+        rot = math.degrees(ang) - 90.0  # Rotate each character to follow the tangent
         ax.text(x, y, ch, ha='center', va='center',
                 rotation=rot, rotation_mode='anchor',
                 fontproperties=fp, color=color,
                 path_effects=(TEXT_OUTLINE if outline else None))
 
-# Draw rings
+# Draw the concentric rings
 fig, ax = plt.subplots(figsize=FIGSIZE, subplot_kw=dict(aspect='equal'),
                        facecolor=BG_COL)
 ax.set_axis_off()
 
 current_radius = BASE_RADIUS
 max_outer_radius = current_radius
-ring_bounds = []  # [{'band': str, 'inner': r, 'outer': r}]
+ring_bounds = []  # Store band boundaries as dicts with inner/outer radii
 
 for band in bands:
     total = band_total_map.get(band, 0.0)
@@ -159,11 +158,11 @@ for band in bands:
     thickness = THICKNESS_MIN + THICKNESS_MAX_EXTRA * w
     inner_r, outer_r = current_radius, current_radius + thickness
 
-    # Shares Debris vs Satellites
+    # Split shares between debris and satellites
     bdf = merged[merged['Band'] == band].set_index('Group')
     shares = [float(bdf['Share'].get(g, 0.0)) for g in group_order]
 
-    # Draw annular sectors
+    # Draw annular sectors for each group
     start = START_ANGLE_DEG % 360.0
     for share, g in zip(shares, group_order):
         sweep = 360.0 * share
@@ -182,14 +181,14 @@ for band in bands:
     current_radius = outer_r + RING_SPACING
     max_outer_radius = max(max_outer_radius, outer_r)
 
-# Curved labels centered above each band
+# Center curved labels above each band
 TOP_ANGLE   = 90
 OUTER_BLEED = 0.60
 
 for idx, rb in enumerate(ring_bounds):
     band = rb['band']
 
-    # Get gap radius
+    # Compute the gap radius
     if idx == 0:
         next_inner = ring_bounds[1]['inner'] if len(ring_bounds) > 1 else rb['outer'] + RING_SPACING - 0.2
         r_label = (rb['outer'] + next_inner - 0.2) / 2.0
@@ -197,9 +196,9 @@ for idx, rb in enumerate(ring_bounds):
         next_inner = ring_bounds[idx + 1]['inner']
         r_label = (rb['outer'] + next_inner - 0.2) / 2.0
     else:
-        r_label = rb['outer'] + OUTER_BLEED * (RING_SPACING-0.2)  # outermost
+        r_label = rb['outer'] + OUTER_BLEED * (RING_SPACING-0.2)  # Add extra bleed on the outermost band
 
-    # AUTO arc for this band at this radius
+    # Auto-compute the arc for this band at this radius
     arc_deg = compute_arc_deg(band, r_label)
 
     curved_label_simple(
@@ -210,22 +209,21 @@ for idx, rb in enumerate(ring_bounds):
     )
 
 
-
-# Framing, legend, and title
+# Handle framing, legend, and title here
 R = max_outer_radius + MARGIN
 ax.set_xlim(-R, R)
 ax.set_ylim(-R, R)
 
-# Legend formatting
+# Format the legend for clarity
 handles, labels = ax.get_legend_handles_labels()
-seen, H, L = set(), [], []
-for h, l in zip(handles, labels):
-    if l and l not in seen:
-        seen.add(l)
-        H.append(h)
-        L.append(l)
-if H:
-    leg = ax.legend(H, L, loc='lower right', frameon=False, title='Object Type')
+seen, handles_clean, labels_clean = set(), [], []
+for handle, label in zip(handles, labels):
+    if label and label not in seen:
+        seen.add(label)
+        handles_clean.append(handle)
+        labels_clean.append(label)
+if handles_clean:
+    leg = ax.legend(handles_clean, labels_clean, loc='lower right', frameon=False, title='Object Type')
     plt.setp(leg.get_texts(), fontsize=LEGEND_FONT_SIZE, color='white')
     plt.setp(leg.get_title(), fontsize=LEGEND_TITLE_SIZE, color='white')
 
@@ -234,7 +232,7 @@ plt.title(
     pad=20, **TITLE_FONT
 )
 
-# Save
-#plt.savefig(VIZ_PATH + OUT_PNG, dpi=1200, facecolor=fig.get_facecolor())
-#plt.savefig(VIZ_PATH + OUT_PNG_T, dpi=1200, transparent=True)
-#print('Saved:', OUT_PNG, OUT_PNG_T)
+# Keep export calls commented until needed:
+# plt.savefig(VIZ_PATH + OUT_PNG, dpi=1200, facecolor=fig.get_facecolor())
+# plt.savefig(VIZ_PATH + OUT_PNG_T, dpi=1200, transparent=True)
+# print('Saved:', OUT_PNG, OUT_PNG_T)

@@ -29,7 +29,7 @@ def test_summarize_paths_at_year_returns_quantiles():
     )
     summary = summarize_paths_at_year(years, paths, 2021)
     assert summary["year"] == 2021
-    assert summary["median"] == 12.0  # median of column 2021
+    assert summary["median"] == 12.0  # Median of the 2021 column should be 12.0
     assert summary["p95"] > summary["median"]
     assert summary["p05"] < summary["median"]
 
@@ -37,7 +37,7 @@ def test_summarize_paths_at_year_returns_quantiles():
 def test_growth_rate_annualized_handles_zero_base():
     assert growth_rate_annualized(0, 100, 5) == 0.0
     rate = growth_rate_annualized(100, 200, 5)
-    assert 0.14 < rate < 0.15  # around 14.9%
+    assert 0.14 < rate < 0.15  # CAGR should land around 14.9%
 
 
 def test_quantiles_over_time_shapes():
