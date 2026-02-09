@@ -2,7 +2,8 @@
 
 > A Streamlit-powered decision dashboard that quantifies space-debris risk, compares mitigation policies, and pinpoints which orbital bands to protect first.
 
-**Live Version:** (Debris Forecasting Dashboard)[https://satellite-debris-forecasting.streamlit.app/]
+**Live Version:** [Debris Forecasting Dashboard](https://satellite-debris-forecasting.streamlit.app/)
+
 (Streamlit puts a time limit on the dashboard. If it is down contact me and I will bring it back up.)
 
 ---
