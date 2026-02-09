@@ -42,7 +42,7 @@ MIN_ARC_DEG    = 40       # Minimum to keep short labels readable
 MAX_ARC_DEG    = 120      # Cap to prevent wild wrapping
 
 # Compute an arc that fits the text at radius r
-def compute_arc_deg(text: str, r: float) -> float:
+def compute_arc_deg(text, r):
     n = max(1, len(text))
     # Scale per-character degrees roughly with 1/r
     deg_per_char = CHAR_DEG_AT_R1 / max(0.2, r)  # Guard against very small r
@@ -99,8 +99,7 @@ def scale_value(v):
 # arc will squish it together. This was literally the hardest part of this
 # graph, please no break.
 #------------------------------------------------------------------------------
-def curved_label_simple(ax, text, r, theta_center_deg, arc_deg,fp=LABEL_FP,
-                        color='black', outline=True):
+def curved_label_simple(ax, text, r, theta_center_deg, arc_deg,fp=LABEL_FP, color='black', outline=True):
     text = str(text)
     if not text:
         return

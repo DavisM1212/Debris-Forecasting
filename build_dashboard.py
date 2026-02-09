@@ -13,11 +13,11 @@ from dashboard_helpers import (
 )
 
 # ----------------------------------
-# Streamlit config and theme values kept up front
+# Streamlit config and theme color values
 # ----------------------------------
 APP_THEME = {
-    "primary": "#f5bf3c",   # Primary color anchor for orbital gold
-    "secondary": "#6ac8ff", # Secondary accent cyan
+    "primary": "#f5bf3c",   # orbital gold
+    "secondary": "#6ac8ff", # accent cyan
     "amber": "#f29f05",
     "scarlet": "#ff5c5c",
     "surface": "#0f1626",
@@ -32,15 +32,9 @@ SENTIMENT_COLORS = {
 }
 
 
-# Stratified jittered grid plus a few clustered points for even-yet-random coverage.
-def _generate_star_positions(
-    n: int,
-    rng: np.random.Generator,
-    cluster_fraction: float = 0.25,
-    n_clusters: int = 4,
-    cluster_spread: float = 6.0,
-) -> list[tuple[float, float]]:
-    positions: list[tuple[float, float]] = []
+# Stratified jittered grid for random coverage with some clustered tendrils
+def _generate_star_positions(n, rng, cluster_fraction=0.25, n_clusters=4,cluster_spread=6.0):
+    positions = []
     base_count = max(int(n * (1 - cluster_fraction)), 0)
 
     # Use a stratified grid so the stars cover the canvas evenly
@@ -74,18 +68,11 @@ def _generate_star_positions(
 
 
 # Return a comma-separated list of radial-gradient definitions for star dots.
-def _build_star_gradients(
-    n: int,
-    seed: int,
-    size_range: tuple[float, float] = (0.8, 2.6),
-    opacity_range: tuple[float, float] = (0.45, 0.85),
-    big_size_range: tuple[float, float] | None = (2.8, 4.8),
-    big_prob: float = 0.18,
-) -> str:
+def _build_star_gradients(n, seed, size_range=(0.8, 2.6), opacity_range=(0.45, 0.85), big_size_range=(2.8, 4.8), big_prob=0.18):
     rng = np.random.default_rng(seed)
     palette = [
-        (247, 249, 253),  # Ink white highlight
-        (245, 191, 60),   # Orbital gold accent
+        (247, 249, 253),  # White highlight
+        (245, 191, 60),   # Orbital gold
         (106, 200, 255),  # Accent cyan
     ]
     positions = _generate_star_positions(n, rng)
@@ -273,12 +260,10 @@ st.markdown(
 
 st.title("🛰️ LEO Congestion Demands Debris Mitigation Now")
 st.subheader("See how cleanup and explosion control reshape debris, collision risk, and cost.")
-st.caption(
-    "Data sources: SATCAT history, Nasa Orbital Debris Quarterly News, ESA Space Environment Report 9.1."
-)
+st.caption("Data sources: SATCAT history, Nasa Orbital Debris Quarterly News, ESA Space Environment Report 9.1.")
 st.markdown("<hr style='margin-top:0.15rem; margin-bottom:0.25rem;'/>", unsafe_allow_html=True)
 
-# Optional explainer copy you can surface near the hero section:
+# Optional explainer:
 # guide_cols = st.columns(3)
 # guide_cols[0].markdown("**How to read**\n\nBlue/teal = goal cleanup; amber/red = status quo. Thick line = median, band = uncertainty.")
 # guide_cols[1].markdown("**Spotlight**\n\nYear slider locks every metric to the same point in time. Scenario pick drives all numbers.")
@@ -335,13 +320,7 @@ GRID_COLOR = "#1f2937"
 # Use neutral_band as the tolerance band (fractional, e.g., 0.05 = 5%).
 # Use near_worst_band to mark a red zone near the worst case for higher-is-better metrics.
 #-----------------------------------------------------------------------------------------
-def sentiment_from_delta(
-    delta: float | None,
-    better_when: str = "lower",
-    neutral_band: float = 0.05,
-    anchor_best: bool = False,
-    near_worst_band: float | None = None,
-) -> str:
+def sentiment_from_delta(delta, better_when="lower", neutral_band=0.05, anchor_best=False, near_worst_band=None):
     if delta is None:
         return "neutral"
 
@@ -377,7 +356,7 @@ def sentiment_from_delta(
 
 
 # Render a custom metric card with sentiment-colored delta.
-def render_metric_card(title: str, value: str, delta_text: str | None, sentiment: str):
+def render_metric_card(title, value, delta_text, sentiment):
     color = SENTIMENT_COLORS.get(sentiment, SENTIMENT_COLORS["neutral"])
     delta_txt = delta_text or "No change"
     st.markdown(
@@ -397,9 +376,7 @@ def render_metric_card(title: str, value: str, delta_text: str | None, sentiment
 # Sidebar inputs collected from the user
 # ----------------------------------
 st.sidebar.header("Scenario inputs")
-st.sidebar.write(
-    "Set cleanup compliance (PMD) and explosion likelihood to compare futures."
-)
+st.sidebar.write("Set cleanup compliance (PMD) and explosion likelihood to compare futures.")
 
 # Hard-coded defaults for data paths and simulation sizing (legacy sidebar controls)
 DATA_PATH = "./Data"
@@ -450,7 +427,7 @@ AVOIDANCE_COST_MUSD = st.sidebar.slider(
 )
 
 # ----------------------------------
-# Constants that anchor the original scenarios
+# Constants for original scenarios
 # ----------------------------------
 DAY = 365.0
 FRAG_EXPLOSION = {"SC": 120, "RB": 260, "SOZ": 160}
@@ -458,8 +435,8 @@ FRAG_COLLISION = 500
 W_SOZ = 1.0
 W_FRAG = 0.02
 
-# Find the counterpart scenario with the same pair_key but opposite mitigation flag.
-def find_pair_scenario(name: str) -> str | None:
+# Find the counterpart scenario with the same pair_key but opposite mitigation flag
+def find_pair_scenario(name):
     meta = SCENARIO_META.get(name)
     if not meta:
         return None
@@ -472,7 +449,7 @@ def find_pair_scenario(name: str) -> str | None:
     return None
 
 # Convert hex color (#RRGGBB) to rgba string with given alpha
-def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+def _hex_to_rgba(hex_color, alpha):
     hex_color = hex_color.lstrip("#")
     r = int(hex_color[0:2], 16)
     g = int(hex_color[2:4], 16)
@@ -481,9 +458,9 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
-# Load orbital shell counts long-form data (Band, Object_Type, Count).
+# Load orbital shell counts long-form data (Band, Object_Type, Count)
 @st.cache_data(show_spinner=True)
-def load_orbital_shell_counts(path: str) -> pd.DataFrame | None:
+def load_orbital_shell_counts(path):
     file_path = path.rstrip("/") + "/orbital_shell_counts_long.csv"
     try:
         df = pd.read_csv(file_path)
@@ -498,7 +475,7 @@ def load_orbital_shell_counts(path: str) -> pd.DataFrame | None:
     return df
 
 # Return cleaned df with Group column.
-def prep_orbital_bands(df: pd.DataFrame) -> pd.DataFrame:
+def prep_orbital_bands(df):
     obj = df["Object_Type"].astype(str).str.lower()
     is_debris = obj.str.contains("debris") | obj.str.contains("rocket_bodies") | obj.str.contains("r/b")
     out = df.copy()
@@ -508,8 +485,8 @@ def prep_orbital_bands(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-# Interactive sunburst fallback with clearer styling.
-def make_orbital_rings_plotly(df: pd.DataFrame):
+# Interactive sunburst fallback
+def make_orbital_rings_plotly(df):
     agg = df.groupby(["Band", "Group"], as_index=False)["Count"].sum()
     agg["Count"] = pd.to_numeric(agg["Count"], errors="coerce").fillna(0)
     fig = px.sunburst(
@@ -575,12 +552,8 @@ DECAY_AMP     = 0.20
 SOLAR_PERIOD  = 11.0
 
 def annual_decay_factor_core(t_year, base_scale=1.0, amp_scale=1.0):
-    return max(
-        0.0,
-        base_scale * DECAY_BASE * (
-            1.0 + amp_scale * DECAY_AMP * np.sin(2*np.pi*(t_year/SOLAR_PERIOD))
-        )
-    )
+    return max(0.0, base_scale * DECAY_BASE * (
+            1.0 + amp_scale * DECAY_AMP * np.sin(2*np.pi*(t_year/SOLAR_PERIOD))))
 
 def scale_for_P8(class_name, P8_target):
     base = LAM_BASE[class_name]
@@ -603,7 +576,7 @@ def amp_rbsoz_from_P8(P8, base=0.001, gain=0.55):
     return 1.0 + gain * (P8/base - 1.0)
 
 # Build collision/fragility knobs derived from PMD compliance and P8 explosion likelihood.
-def scenario_knobs(pmd_comp: float, P8: float):
+def scenario_knobs(pmd_comp, P8):
     k = dict(
         apply_pmd_25 = (pmd_comp >= 0.85),
         frag_decay_mult = 4.0,
@@ -621,7 +594,7 @@ def scenario_knobs(pmd_comp: float, P8: float):
     )
 
     if pmd_comp < 0.5:
-        k["apply_pmd_25"] = False
+        k["apply_pmd_25"]     = False
         k["decay_base_scale"] = 0.2
         k["decay_amp_scale"]  = 1.0
         k["frag_decay_mult"]  = 1.0
@@ -630,25 +603,25 @@ def scenario_knobs(pmd_comp: float, P8: float):
         k["exp_frag_amp_RB_SOZ"] = np.clip((P8/0.001)**0.9, 1.0, 4.0)
 
         if P8 >= 0.0045:
-            k["coll_base"]   = 0.42
-            k["coll_k"]      = 1.10
-            k["coll_gamma"]  = 1.12
-            k["coll_cap0"]   = 4.6
-            k["coll_cap_grow"]= 0.35
-            k["coll_cap_pow"] = 1.8
-            k["coll_eta_frag"] = 0.32
-            k["coll_accel"]  = 0.40
-            k["coll_alpha"]  = 2.2
+            k["coll_base"]      = 0.42
+            k["coll_k"]         = 1.10
+            k["coll_gamma"]     = 1.12
+            k["coll_cap0"]      = 4.6
+            k["coll_cap_grow"]  = 0.35
+            k["coll_cap_pow"]   = 1.8
+            k["coll_eta_frag"]  = 0.32
+            k["coll_accel"]     = 0.40
+            k["coll_alpha"]     = 2.2
         else:
-            k["coll_base"]   = 0.24
-            k["coll_k"]      = 0.92
-            k["coll_gamma"]  = 1.05
-            k["coll_cap0"]    = 3.4
-            k["coll_cap_grow"]= 0.22
-            k["coll_cap_pow"] = 1.6
-            k["coll_eta_frag"] = 0.10
-            k["coll_accel"]  = 0.22
-            k["coll_alpha"]  = 1.8
+            k["coll_base"]      = 0.24
+            k["coll_k"]         = 0.92
+            k["coll_gamma"]     = 1.05
+            k["coll_cap0"]      = 3.4
+            k["coll_cap_grow"]  = 0.22
+            k["coll_cap_pow"]   = 1.6
+            k["coll_eta_frag"]  = 0.10
+            k["coll_accel"]     = 0.22
+            k["coll_alpha"]     = 1.8
     else:
         k["w_frag"] = 0.05
         k["frag_decay_mult"] = 2.5
@@ -680,7 +653,7 @@ def scenario_knobs(pmd_comp: float, P8: float):
 
     return k
 
-# Compute annual catastrophic collision rate with optional frag-driven uplift and time ramp.
+# Compute annual catastrophic collision rate with optional frag-driven uplift and time ramp
 def collisions_rate(N_eff_parents, N_eff_ref, frag_stock, knobs, t_year, horizon_years):
     base_term = knobs["coll_base"] + knobs["coll_k"] * (max(N_eff_parents,1.0)/max(N_eff_ref,1.0))**knobs["coll_gamma"]
     if knobs.get("coll_eta_frag", 0.0) > 0.0:
@@ -764,7 +737,7 @@ BASELINE_YEAR, cohorts0, tail_mean, tail_cagr = load_and_prepare_satcat(
 # ----------------------------------
 # Monte Carlo paths cached for reuse
 # ----------------------------------
-# One Monte Carlo path: evolve cohorts, explosions, collisions, decay, and add new launches.
+# One Monte Carlo path: evolve cohorts, explosions, collisions, decay, and add new launches
 def run_one_path(seed, scenario, H, knobs, scale_eff, N_eff_ref, N_years_fwd, tail_mean_local, cohorts0_local):
     rng = np.random.default_rng(seed)
 
@@ -833,7 +806,7 @@ def run_one_path(seed, scenario, H, knobs, scale_eff, N_eff_ref, N_years_fwd, ta
 
     return total_eff, cum_coll
 
-# Cache a fan of Monte Carlo paths for a scenario to avoid recomputing identical runs.
+# Cache a fan of Monte Carlo paths for a scenario to avoid recomputing identical runs
 @st.cache_data(show_spinner=True)
 def run_fan_cached(scn_name, N_paths, N_years_fwd, HIST_TAIL, BASELINE_YEAR, cohorts0_local, tail_mean_local):
     scenario = SCENARIOS[scn_name]
@@ -867,7 +840,7 @@ def run_fan_cached(scn_name, N_paths, N_years_fwd, HIST_TAIL, BASELINE_YEAR, coh
     YEARS = np.arange(BASELINE_YEAR, BASELINE_YEAR + N_years_fwd + 1)
     return YEARS, Ns, Cs
 
-# Add median plus 5-95% band for a scenario with consistent hover styling.
+# Add median plus 5-95% band for a scenario with consistent hover styling
 def add_fan_traces(fig, years, paths, meta, show_band=True, y_fmt=",.0f"):
     q = quantiles_over_time(paths)
     legendgroup = meta["label"]
